@@ -169,9 +169,23 @@ jobs:
         run: node tests/smoke/echo-ping.mjs
 
       # ---- Template build smoke (requires MAUI workload) ----
+      #
+      # `--skip-manifest-update` is load-bearing on macOS today: without it,
+      # `dotnet workload install` pulls the newest maccatalyst manifest from
+      # NuGet, which currently requires the SDK shipped with Xcode 26.4. The
+      # macos-latest runner image only has up to Xcode 26.3 installed, so the
+      # next build would fail in ILLink's Setup step with MT0180. Sticking to
+      # the manifest version bundled with the installed .NET SDK pins us to a
+      # workload that's coherent with what's actually on the runner. This is
+      # safe on Windows too (the maui-windows manifest doesn't track Xcode),
+      # so we apply it uniformly.
       - name: Install MAUI workload (${{ matrix.maui-workload }})
         shell: bash
-        run: dotnet workload install ${{ matrix.maui-workload }}
+        run: dotnet workload install ${{ matrix.maui-workload }} --skip-manifest-update
+
+      - name: Log installed workloads
+        shell: bash
+        run: dotnet workload list
 
       - name: Build SDK
         shell: bash
