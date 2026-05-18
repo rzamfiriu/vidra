@@ -1,0 +1,8 @@
+{
+  "id": "req_2",
+  "success": false,
+  "error": {
+    "code": "MODULE_NOT_FOUND",
+    "message": "No module 'does-not-exist' is registered."
+  }
+}

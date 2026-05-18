@@ -1,0 +1,8 @@
+{
+  "id": "req_1",
+  "module": "echo",
+  "method": "ping",
+  "payload": {
+    "text": "hello"
+  }
+}

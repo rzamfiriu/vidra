@@ -1,0 +1,56 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.DotSettings
+*.DotSettings.user
+.vs/
+TestResults/
+BenchmarkDotNet.Artifacts/
+*.received.*
+*.coverage
+*.coveragexml
+coverage/
+.nyc_output/
+
+# Node
+node_modules/
+dist/
+.vite/
+.pnpm-store/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Logs / temp
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+
+# OS
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Internal-only docs (not for public repo)
+docs/tauri-comparison.md
+docs/internal/

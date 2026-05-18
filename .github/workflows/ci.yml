@@ -1,0 +1,201 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Fast, deterministic tier: runs every unit, contract, and scaffold
+  # integration test on a single Linux runner. All C# projects under
+  # tests/dotnet/** target net10.0 (non-MAUI) so MAUI workloads are not
+  # required here.
+  unit-and-contract:
+    name: Unit + contract (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.x
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: |
+            src/cli/create-uinet-app/package-lock.json
+            src/sdk/uinet-js/package-lock.json
+
+      # ---- C# unit + contract + codegen snapshots ----
+      - name: Restore C# test projects
+        run: |
+          dotnet restore tests/dotnet/UINet.Bridge.Tests/UINet.Bridge.Tests.csproj
+          dotnet restore tests/dotnet/UINet.CodeGen.Tests/UINet.CodeGen.Tests.csproj
+          dotnet restore tests/dotnet/UINet.Modules.FileSystem.Tests/UINet.Modules.FileSystem.Tests.csproj
+          dotnet restore tests/dotnet/UINet.Modules.Windowing.Tests/UINet.Modules.Windowing.Tests.csproj
+
+      - name: Build C# test projects
+        run: |
+          dotnet build tests/dotnet/UINet.Bridge.Tests/UINet.Bridge.Tests.csproj -c Release --no-restore
+          dotnet build tests/dotnet/UINet.CodeGen.Tests/UINet.CodeGen.Tests.csproj -c Release --no-restore
+          dotnet build tests/dotnet/UINet.Modules.FileSystem.Tests/UINet.Modules.FileSystem.Tests.csproj -c Release --no-restore
+          dotnet build tests/dotnet/UINet.Modules.Windowing.Tests/UINet.Modules.Windowing.Tests.csproj -c Release --no-restore
+
+      - name: Run UINet.Bridge.Tests
+        run: dotnet test tests/dotnet/UINet.Bridge.Tests/UINet.Bridge.Tests.csproj -c Release --no-build --logger "trx;LogFileName=bridge.trx"
+
+      - name: Run UINet.CodeGen.Tests
+        run: dotnet test tests/dotnet/UINet.CodeGen.Tests/UINet.CodeGen.Tests.csproj -c Release --no-build --logger "trx;LogFileName=codegen.trx"
+
+      - name: Run UINet.Modules.FileSystem.Tests
+        run: dotnet test tests/dotnet/UINet.Modules.FileSystem.Tests/UINet.Modules.FileSystem.Tests.csproj -c Release --no-build --logger "trx;LogFileName=modules-filesystem.trx"
+
+      - name: Run UINet.Modules.Windowing.Tests
+        run: dotnet test tests/dotnet/UINet.Modules.Windowing.Tests/UINet.Modules.Windowing.Tests.csproj -c Release --no-build --logger "trx;LogFileName=modules-windowing.trx"
+
+      # ---- TypeScript SDK ----
+      - name: Install SDK dependencies
+        working-directory: src/sdk/uinet-js
+        run: npm ci || npm install
+
+      - name: Type-check SDK
+        working-directory: src/sdk/uinet-js
+        run: npx tsc --noEmit
+
+      - name: Run SDK tests
+        working-directory: src/sdk/uinet-js
+        run: npm test
+
+      # ---- TypeScript CLI ----
+      - name: Install CLI dependencies
+        working-directory: src/cli/create-uinet-app
+        run: npm ci || npm install
+
+      - name: Run CLI tests (unit + scaffold integration)
+        working-directory: src/cli/create-uinet-app
+        run: npm test
+
+      - name: Build CLI
+        working-directory: src/cli/create-uinet-app
+        run: npm run build
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dotnet-trx
+          path: "**/TestResults/*.trx"
+          if-no-files-found: ignore
+
+  # Per-OS smoke tier: prove that (a) the real C# bridge wire format
+  # round-trips correctly through stdio on each target OS using the
+  # UINet.Bridge.Smoke harness and the tests/smoke/echo-ping.mjs driver,
+  # and (b) the scaffolded template from create-uinet-app builds end-to-end
+  # against locally-packed NuGets for the platform-native TFM.
+  #
+  # MAUI workloads are only installed for the template build step; the
+  # bridge echo-ping smoke itself targets net10.0 and needs no workload.
+  smoke:
+    name: Smoke (${{ matrix.os }})
+    needs: unit-and-contract
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            tfm: net10.0-windows10.0.19041.0
+            maui-workload: maui-windows
+          - os: macos-latest
+            tfm: net10.0-maccatalyst
+            maui-workload: maui
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.x
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: |
+            src/cli/create-uinet-app/package-lock.json
+            src/sdk/uinet-js/package-lock.json
+
+      # ---- Fast bridge echo-ping (no MAUI workload needed) ----
+      - name: Build UINet.Bridge.Smoke harness
+        shell: bash
+        run: |
+          dotnet build tests/dotnet/UINet.Bridge.Smoke/UINet.Bridge.Smoke.csproj \
+            -c Release
+
+      - name: Run echo-ping smoke over stdio
+        shell: bash
+        env:
+          UINET_SMOKE_CONFIG: Release
+        run: node tests/smoke/echo-ping.mjs
+
+      # ---- Template build smoke (requires MAUI workload) ----
+      - name: Install MAUI workload (${{ matrix.maui-workload }})
+        shell: bash
+        run: dotnet workload install ${{ matrix.maui-workload }}
+
+      - name: Build SDK
+        shell: bash
+        working-directory: src/sdk/uinet-js
+        run: |
+          npm ci || npm install
+          npm run build
+
+      - name: Build and link CLI
+        shell: bash
+        working-directory: src/cli/create-uinet-app
+        run: |
+          npm ci || npm install
+          npm run build
+
+      - name: Pack local NuGet feed
+        shell: bash
+        run: ./pack-local.sh
+
+      - name: Scaffold a throwaway app with create-uinet-app
+        shell: bash
+        working-directory: ${{ runner.temp }}
+        run: |
+          node "$GITHUB_WORKSPACE/src/cli/create-uinet-app/dist/index.js" \
+            uinet-smoke --app-id=com.uinet.smoke
+          ls uinet-smoke
+
+      - name: dotnet restore scaffolded host project (${{ matrix.tfm }})
+        shell: bash
+        working-directory: ${{ runner.temp }}/uinet-smoke
+        run: |
+          dotnet restore src/UinetSmoke.Host/UinetSmoke.Host.csproj \
+            -p:TargetFramework=${{ matrix.tfm }}
+
+      - name: dotnet build scaffolded host project (${{ matrix.tfm }})
+        shell: bash
+        working-directory: ${{ runner.temp }}/uinet-smoke
+        run: |
+          dotnet build src/UinetSmoke.Host/UinetSmoke.Host.csproj \
+            -c Debug \
+            -f ${{ matrix.tfm }} \
+            --no-restore
+
+      - name: Build scaffolded UI (Vite)
+        shell: bash
+        working-directory: ${{ runner.temp }}/uinet-smoke/ui
+        run: |
+          npm ci || npm install
+          npm run build --if-present

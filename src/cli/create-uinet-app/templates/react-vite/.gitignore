@@ -1,0 +1,15 @@
+# Build artifacts
+dist/
+src/*/Resources/Raw/wwwroot/
+
+# .NET
+**/bin/
+**/obj/
+
+# Node
+node_modules/
+
+# IDE
+.vs/
+.vscode/
+*.user

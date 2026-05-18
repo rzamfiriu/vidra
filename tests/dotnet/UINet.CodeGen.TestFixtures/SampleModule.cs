@@ -1,0 +1,27 @@
+using UINet.Bridge;
+
+namespace UINet.CodeGen.TestFixtures;
+
+public enum Mood
+{
+    Happy,
+    Neutral,
+    Sad
+}
+
+public record EchoArgs(string Text, int? Count);
+
+public record EchoResult(string Text, string[] Tags, Mood Mood);
+
+/// <summary>
+/// Fixture module used by the UINet.CodeGen test suite.
+/// Designed to exercise primitives, records, arrays, nullables, and enums
+/// without drifting with the real production modules.
+/// </summary>
+[BridgeModule("sample")]
+public sealed class SampleModule : BridgeModuleBase
+{
+    [BridgeMethod("echo")]
+    public Task<EchoResult> EchoAsync(EchoArgs args, CancellationToken ct)
+        => Task.FromResult(new EchoResult(args.Text, Array.Empty<string>(), Mood.Happy));
+}

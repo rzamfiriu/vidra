@@ -1,0 +1,7 @@
+{
+  "id": "cap_1",
+  "success": true,
+  "data": {
+    "echo": ["ping", "fail"]
+  }
+}

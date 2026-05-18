@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>UINet.Modules.Windowing.Tests</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" Version="6.12.2" />
+    <PackageReference Include="coverlet.collector" Version="6.0.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\bridge\UINet.Bridge\UINet.Bridge.csproj" />
+  </ItemGroup>
+
+  <!--
+    Link only the portable file from the Windowing module. The module's full
+    AppWindowModule class references IAppWindowService which in turn takes
+    MAUI's Microsoft.Maui.Controls.Page; we can't link that in a non-MAUI
+    test project. Instead, we duplicate the module's bridge surface locally
+    via TestAppWindowModule.cs to cover validation + attribute shape +
+    dispatcher integration without pulling in MAUI.
+  -->
+  <ItemGroup>
+    <Compile Include="..\..\..\src\modules\UINet.Modules.Windowing\AppWindowTypes.cs"
+             Link="Linked\AppWindowTypes.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Using Include="FluentAssertions" />
+  </ItemGroup>
+
+</Project>

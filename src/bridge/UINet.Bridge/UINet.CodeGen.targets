@@ -1,0 +1,37 @@
+<Project>
+
+  <!--
+    Import this file in any module .csproj to auto-generate TypeScript proxies on build.
+
+    Usage in your .csproj:
+      <Import Project="path/to/UINet.CodeGen.targets" />
+
+    Configurable properties (set before the Import):
+      UINetTsOutputDir      - Where to write .ts files (default: $(MSBuildProjectDirectory)/generated)
+      UINetSdkImport        - The import path for @uinet/sdk (default: @uinet/sdk)
+      UINetCodeGenProject   - Path to the UINet.CodeGen.csproj (auto-detected in monorepo)
+      UINetGenerateTs       - Set to "false" to disable codegen (default: true)
+  -->
+
+  <PropertyGroup>
+    <UINetGenerateTs Condition="'$(UINetGenerateTs)' == ''">true</UINetGenerateTs>
+    <UINetTsOutputDir Condition="'$(UINetTsOutputDir)' == ''">$(MSBuildProjectDirectory)/generated</UINetTsOutputDir>
+    <UINetSdkImport Condition="'$(UINetSdkImport)' == ''">@uinet/sdk</UINetSdkImport>
+    <UINetCodeGenProject Condition="'$(UINetCodeGenProject)' == ''">$(MSBuildThisFileDirectory)/../../tools/UINet.CodeGen/UINet.CodeGen.csproj</UINetCodeGenProject>
+  </PropertyGroup>
+
+  <Target Name="UINetCodeGen"
+          AfterTargets="Build"
+          Condition="'$(UINetGenerateTs)' == 'true' AND '$(TargetFramework)' != ''">
+
+    <Message Importance="high" Text="[UINet] Generating TypeScript proxies from $(TargetPath)..." />
+
+    <Exec Command="dotnet run --configuration $(Configuration) --no-build --project &quot;$(UINetCodeGenProject)&quot; -- generate --assembly &quot;$(TargetPath)&quot; --output &quot;$(UINetTsOutputDir)&quot; --sdk-import &quot;$(UINetSdkImport)&quot;"
+          WorkingDirectory="$(MSBuildProjectDirectory)"
+          IgnoreExitCode="false" />
+
+    <Message Importance="high" Text="[UINet] TypeScript proxies written to $(UINetTsOutputDir)" />
+
+  </Target>
+
+</Project>

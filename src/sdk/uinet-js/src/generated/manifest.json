@@ -1,0 +1,763 @@
+{
+  "modules": {
+    "filesystem": {
+      "className": "FileSystemModule",
+      "methods": {
+        "readText": {
+          "params": {
+            "kind": "object",
+            "name": "ReadTextArgs",
+            "fields": {
+              "path": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "ReadTextResult",
+            "fields": {
+              "content": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          }
+        },
+        "writeText": {
+          "params": {
+            "kind": "object",
+            "name": "WriteTextArgs",
+            "fields": {
+              "path": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "content": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "WriteTextResult",
+            "fields": {
+              "success": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          }
+        },
+        "exists": {
+          "params": {
+            "kind": "object",
+            "name": "ExistsArgs",
+            "fields": {
+              "path": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "ExistsResult",
+            "fields": {
+              "exists": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          }
+        },
+        "delete": {
+          "params": {
+            "kind": "object",
+            "name": "DeleteArgs",
+            "fields": {
+              "path": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "DeleteResult",
+            "fields": {
+              "success": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          }
+        },
+        "listDirectory": {
+          "params": {
+            "kind": "object",
+            "name": "ListDirectoryArgs",
+            "fields": {
+              "path": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "ListDirectoryResult",
+            "fields": {
+              "entries": {
+                "kind": "array",
+                "element": {
+                  "kind": "object",
+                  "name": "DirectoryEntry",
+                  "fields": {
+                    "name": {
+                      "kind": "primitive",
+                      "tsType": "string"
+                    },
+                    "isDirectory": {
+                      "kind": "primitive",
+                      "tsType": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "clipboard": {
+      "className": "ClipboardModule",
+      "methods": {
+        "getText": {
+          "returns": {
+            "kind": "object",
+            "name": "GetTextResult",
+            "fields": {
+              "text": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          }
+        },
+        "setText": {
+          "params": {
+            "kind": "object",
+            "name": "SetTextArgs",
+            "fields": {
+              "text": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "SetTextResult",
+            "fields": {
+              "success": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          }
+        },
+        "hasText": {
+          "returns": {
+            "kind": "object",
+            "name": "HasTextResult",
+            "fields": {
+              "hasText": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "dialogs": {
+      "className": "DialogsModule",
+      "methods": {
+        "alert": {
+          "params": {
+            "kind": "object",
+            "name": "AlertArgs",
+            "fields": {
+              "title": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "message": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "ok": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "AlertResult",
+            "fields": {
+              "dismissed": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          }
+        },
+        "confirm": {
+          "params": {
+            "kind": "object",
+            "name": "ConfirmArgs",
+            "fields": {
+              "title": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "message": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "accept": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "cancel": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "ConfirmResult",
+            "fields": {
+              "confirmed": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          }
+        },
+        "prompt": {
+          "params": {
+            "kind": "object",
+            "name": "PromptArgs",
+            "fields": {
+              "title": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "message": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "accept": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "cancel": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "PromptResult",
+            "fields": {
+              "value": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "notifications": {
+      "className": "NotificationsModule",
+      "methods": {
+        "show": {
+          "params": {
+            "kind": "object",
+            "name": "ShowArgs",
+            "fields": {
+              "title": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "body": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "ShowResult",
+            "fields": {
+              "scheduled": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          }
+        },
+        "requestPermission": {
+          "returns": {
+            "kind": "object",
+            "name": "RequestPermissionResult",
+            "fields": {
+              "granted": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "app": {
+      "className": "AppLifecycleModule",
+      "methods": {
+        "getInfo": {
+          "returns": {
+            "kind": "object",
+            "name": "AppInfoResult",
+            "fields": {
+              "appName": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "packageName": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "version": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "build": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "platform": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "idiom": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          }
+        },
+        "getTheme": {
+          "returns": {
+            "kind": "object",
+            "name": "ThemeResult",
+            "fields": {
+              "theme": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "appWindow": {
+      "className": "AppWindowModule",
+      "methods": {
+        "getSupport": {
+          "returns": {
+            "kind": "object",
+            "name": "WindowSupport",
+            "fields": {
+              "platform": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "getCurrent": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              },
+              "configure": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              },
+              "setTitle": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              },
+              "setSize": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              },
+              "center": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              },
+              "maximize": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              },
+              "minimize": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              },
+              "restore": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              },
+              "setFullscreen": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          }
+        },
+        "getCurrent": {
+          "returns": {
+            "kind": "object",
+            "name": "WindowInfo",
+            "fields": {
+              "title": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "width": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "height": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "state": {
+                "kind": "enum",
+                "name": "WindowState",
+                "values": [
+                  "Restored",
+                  "Maximized",
+                  "Minimized",
+                  "Fullscreen"
+                ]
+              }
+            }
+          }
+        },
+        "configure": {
+          "params": {
+            "kind": "object",
+            "name": "ConfigureWindowArgs",
+            "fields": {
+              "title": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "width": {
+                "kind": "nullable",
+                "element": {
+                  "kind": "primitive",
+                  "tsType": "number"
+                }
+              },
+              "height": {
+                "kind": "nullable",
+                "element": {
+                  "kind": "primitive",
+                  "tsType": "number"
+                }
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "WindowInfo",
+            "fields": {
+              "title": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "width": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "height": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "state": {
+                "kind": "enum",
+                "name": "WindowState",
+                "values": [
+                  "Restored",
+                  "Maximized",
+                  "Minimized",
+                  "Fullscreen"
+                ]
+              }
+            }
+          }
+        },
+        "setTitle": {
+          "params": {
+            "kind": "object",
+            "name": "SetTitleArgs",
+            "fields": {
+              "title": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "WindowInfo",
+            "fields": {
+              "title": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "width": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "height": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "state": {
+                "kind": "enum",
+                "name": "WindowState",
+                "values": [
+                  "Restored",
+                  "Maximized",
+                  "Minimized",
+                  "Fullscreen"
+                ]
+              }
+            }
+          }
+        },
+        "setSize": {
+          "params": {
+            "kind": "object",
+            "name": "SetSizeArgs",
+            "fields": {
+              "width": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "height": {
+                "kind": "primitive",
+                "tsType": "number"
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "WindowInfo",
+            "fields": {
+              "title": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "width": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "height": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "state": {
+                "kind": "enum",
+                "name": "WindowState",
+                "values": [
+                  "Restored",
+                  "Maximized",
+                  "Minimized",
+                  "Fullscreen"
+                ]
+              }
+            }
+          }
+        },
+        "center": {
+          "returns": {
+            "kind": "object",
+            "name": "WindowInfo",
+            "fields": {
+              "title": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "width": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "height": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "state": {
+                "kind": "enum",
+                "name": "WindowState",
+                "values": [
+                  "Restored",
+                  "Maximized",
+                  "Minimized",
+                  "Fullscreen"
+                ]
+              }
+            }
+          }
+        },
+        "maximize": {
+          "returns": {
+            "kind": "object",
+            "name": "WindowInfo",
+            "fields": {
+              "title": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "width": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "height": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "state": {
+                "kind": "enum",
+                "name": "WindowState",
+                "values": [
+                  "Restored",
+                  "Maximized",
+                  "Minimized",
+                  "Fullscreen"
+                ]
+              }
+            }
+          }
+        },
+        "minimize": {
+          "returns": {
+            "kind": "object",
+            "name": "WindowInfo",
+            "fields": {
+              "title": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "width": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "height": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "state": {
+                "kind": "enum",
+                "name": "WindowState",
+                "values": [
+                  "Restored",
+                  "Maximized",
+                  "Minimized",
+                  "Fullscreen"
+                ]
+              }
+            }
+          }
+        },
+        "restore": {
+          "returns": {
+            "kind": "object",
+            "name": "WindowInfo",
+            "fields": {
+              "title": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "width": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "height": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "state": {
+                "kind": "enum",
+                "name": "WindowState",
+                "values": [
+                  "Restored",
+                  "Maximized",
+                  "Minimized",
+                  "Fullscreen"
+                ]
+              }
+            }
+          }
+        },
+        "setFullscreen": {
+          "params": {
+            "kind": "object",
+            "name": "SetFullscreenArgs",
+            "fields": {
+              "enabled": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "WindowInfo",
+            "fields": {
+              "title": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "width": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "height": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "state": {
+                "kind": "enum",
+                "name": "WindowState",
+                "values": [
+                  "Restored",
+                  "Maximized",
+                  "Minimized",
+                  "Fullscreen"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

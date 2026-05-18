@@ -1,0 +1,8 @@
+{
+  "id": "rev_3",
+  "success": false,
+  "error": {
+    "code": "HANDLER_ERROR",
+    "message": "boom"
+  }
+}
