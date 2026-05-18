@@ -21,6 +21,15 @@
 
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">15.0</SupportedOSPlatformVersion>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</SupportedOSPlatformVersion>
+
+    <!--
+      Build as an unpackaged Win32-style app on Windows. The scaffolded
+      template intentionally ships without a Platforms/Windows/Package.appxmanifest;
+      MSIX packaging is the consumer's responsibility (e.g. via the `uinet
+      build` CLI) and would otherwise fail a plain `dotnet build` with NETSDK
+      errors from the WindowsAppSDK MSIX targets.
+    -->
+    <WindowsPackageType Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">None</WindowsPackageType>
   </PropertyGroup>
 
   <ItemGroup>
