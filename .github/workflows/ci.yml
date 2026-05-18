@@ -133,17 +133,21 @@ jobs:
             src/cli/create-uinet-app/package-lock.json
             src/sdk/uinet-js/package-lock.json
 
-      # The maui workload's MacCatalyst reference assemblies require the
-      # MacCatalyst SDK that ships with Xcode 26.4. The macos-latest runner
-      # has multiple Xcodes installed (26.2 / 26.4.x / 26.5-RC), but
-      # xcode-select defaults to an older one, which makes ILLink fail with
-      # MT0180. Pin to the 26.4.x channel explicitly; the action matches by
-      # version prefix and picks the highest installed 26.4.* on the image.
-      - name: Select Xcode 26.4 (macOS)
+      # Pin xcode-select to the newest Xcode actually present on the
+      # runner image. As of this writing the macos-latest image tops out
+      # at Xcode 26.3, while the maui workload's MacCatalyst reference
+      # assemblies require the SDK shipped with Xcode 26.4 (MT0180). We
+      # therefore can't satisfy the workload's check at the SDK level;
+      # the host csproj disables the MacCatalyst linker for Debug builds
+      # via <MtouchLink>None</MtouchLink>, which skips the linker Setup
+      # step where MT0180 is raised. Selecting the newest available Xcode
+      # here is still worth doing so the rest of the toolchain (Info.plist
+      # validation, signing, etc.) targets the most recent SDK present.
+      - name: Select newest available Xcode (macOS)
         if: runner.os == 'macOS'
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: "26.4"
+          xcode-version: "26.3"
 
       - name: Log Xcode version (macOS)
         if: runner.os == 'macOS'
