@@ -25,6 +25,13 @@
 
     <!-- Unpackaged Win32-style app on Windows; no Package.appxmanifest required. -->
     <WindowsPackageType Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">None</WindowsPackageType>
+
+    <!--
+      Skip the MacCatalyst managed linker in Debug to decouple compile-time
+      verification from the locally-installed Xcode version (see MT0180).
+      Release builds keep the default linker.
+    -->
+    <MtouchLink Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst' And '$(Configuration)' == 'Debug'">None</MtouchLink>
   </PropertyGroup>
 
   <ItemGroup>

@@ -134,15 +134,22 @@ jobs:
             src/sdk/uinet-js/package-lock.json
 
       # The maui workload's MacCatalyst reference assemblies require the
-      # MacCatalyst SDK that ships with the latest Xcode. The runner image
-      # has multiple Xcodes installed, but xcode-select points at an older
-      # one by default, which makes ILLink fail with MT0180. Pin to the
-      # newest stable Xcode on the runner.
-      - name: Select latest Xcode (macOS)
+      # MacCatalyst SDK that ships with Xcode 26.4. The macos-latest runner
+      # has multiple Xcodes installed (26.2 / 26.4.x / 26.5-RC), but
+      # xcode-select defaults to an older one, which makes ILLink fail with
+      # MT0180. Pin to the 26.4.x channel explicitly; the action matches by
+      # version prefix and picks the highest installed 26.4.* on the image.
+      - name: Select Xcode 26.4 (macOS)
         if: runner.os == 'macOS'
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: "26.4"
+
+      - name: Log Xcode version (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          xcode-select -p
+          xcodebuild -version
 
       # ---- Fast bridge echo-ping (no MAUI workload needed) ----
       - name: Build UINet.Bridge.Smoke harness
