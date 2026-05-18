@@ -30,6 +30,18 @@
       errors from the WindowsAppSDK MSIX targets.
     -->
     <WindowsPackageType Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">None</WindowsPackageType>
+
+    <!--
+      Skip the MacCatalyst managed linker in Debug. The linker's Setup step
+      validates the MacCatalyst SDK headers against the maui workload version,
+      and the maui workload tracks the newest Xcode aggressively (MT0180).
+      Disabling the linker for Debug builds gives consistent compile semantics
+      regardless of the local Xcode, and matches the fast-iteration default
+      that Hot Restart-style flows use. Release builds (e.g. `uinet build
+      target macos`) keep the default linker so production trimming is
+      preserved.
+    -->
+    <MtouchLink Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst' And '$(Configuration)' == 'Debug'">None</MtouchLink>
   </PropertyGroup>
 
   <ItemGroup>

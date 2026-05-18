@@ -5,7 +5,13 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
-import { toPascalCase, toKebabCase, toTitleCase, parseArgs } from "./utils.js";
+import {
+  toPascalCase,
+  toKebabCase,
+  toTitleCase,
+  toTextPath,
+  parseArgs,
+} from "./utils.js";
 import { exec, tryExec } from "./exec.js";
 import { scaffoldDir, type Replacements } from "./scaffold.js";
 
@@ -82,16 +88,24 @@ const main = async (): Promise<void> => {
   console.log(`  ${chalk.dim("App ID:")}     ${chalk.cyan(appId)}`);
   console.log();
 
+  // Path values get textually substituted into JSON (ui/package.json) and
+  // XML (NuGet.Config). On Windows, native separators are `\`, which JSON
+  // rejects as invalid escapes (\a, \u, ...). `toTextPath` normalizes to
+  // forward slashes, which npm and NuGet accept on every OS.
   const localFeedExists = fs.existsSync(LOCAL_FEED_DIR);
-  const localFeedPath = localFeedExists ? LOCAL_FEED_DIR : "";
+  const localFeedPath = localFeedExists ? toTextPath(LOCAL_FEED_DIR) : "";
 
   const localCliExists = fs.existsSync(path.join(LOCAL_CLI_DIR, "package.json"));
-  const cliRef = localCliExists ? `file:${LOCAL_CLI_DIR}` : `^${UINET_VERSION}`;
+  const cliRef = localCliExists
+    ? `file:${toTextPath(LOCAL_CLI_DIR)}`
+    : `^${UINET_VERSION}`;
 
   const localSdkExists = fs.existsSync(
     path.join(LOCAL_SDK_DIR, "package.json"),
   );
-  const sdkRef = localSdkExists ? `file:${LOCAL_SDK_DIR}` : `^${SDK_VERSION}`;
+  const sdkRef = localSdkExists
+    ? `file:${toTextPath(LOCAL_SDK_DIR)}`
+    : `^${SDK_VERSION}`;
 
   const replacements: Replacements = {
     "{{projectName}}": projectName,

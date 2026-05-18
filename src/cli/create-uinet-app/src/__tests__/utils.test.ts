@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { toPascalCase, toKebabCase, toTitleCase, parseArgs } from "../utils.js";
+import {
+  toPascalCase,
+  toKebabCase,
+  toTitleCase,
+  toTextPath,
+  parseArgs,
+} from "../utils.js";
 
 describe("toPascalCase", () => {
   it.each([
@@ -36,6 +42,31 @@ describe("toTitleCase", () => {
     ["already Title", "Already Title"],
   ])("converts %s to %s", (input, expected) => {
     expect(toTitleCase(input)).toBe(expected);
+  });
+});
+
+describe("toTextPath", () => {
+  it("rewrites Windows backslash paths to forward slashes", () => {
+    expect(toTextPath("D:\\a\\uinet\\uinet\\src\\sdk\\uinet-js")).toBe(
+      "D:/a/uinet/uinet/src/sdk/uinet-js",
+    );
+  });
+
+  it("is a no-op on POSIX-shaped paths", () => {
+    const p = "/Users/runner/work/_temp/uinet-smoke/src/sdk";
+    expect(toTextPath(p)).toBe(p);
+  });
+
+  // Regression: substituting a raw Windows path into ui/package.json
+  // produced invalid JSON because `\a`, `\u`, etc. were read as escape
+  // sequences. The normalized form must survive a JSON round-trip
+  // verbatim, since that's what npm reads at install time.
+  it("produces a string that is valid inside a JSON value", () => {
+    const winPath = "D:\\a\\uinet\\uinet\\src\\sdk\\uinet-js";
+    expect(() => JSON.parse(`{"x":"file:${winPath}"}`)).toThrow();
+    expect(() =>
+      JSON.parse(`{"x":"file:${toTextPath(winPath)}"}`),
+    ).not.toThrow();
   });
 });
 
