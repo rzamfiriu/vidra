@@ -1,0 +1,8 @@
+{
+  "id": "req_3",
+  "success": false,
+  "error": {
+    "code": "MODULE_ERROR",
+    "message": "boom"
+  }
+}

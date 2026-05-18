@@ -1,0 +1,43 @@
+{
+  "name": "create-uinet-app",
+  "version": "0.1.0",
+  "description": "Scaffold a new UINet application (React + .NET MAUI)",
+  "type": "module",
+  "bin": {
+    "create-uinet-app": "./bin/create-uinet-app.mjs",
+    "uinet": "./bin/uinet.mjs"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "templates/"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "uinet",
+    "maui",
+    "react",
+    "cross-platform",
+    "scaffold",
+    "cli"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "chalk": "^5.4.1",
+    "fs-extra": "^11.2.0",
+    "prompts": "^2.4.2"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^22.9.0",
+    "@types/prompts": "^2.4.9",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.2",
+    "vitest": "^2.1.4"
+  }
+}

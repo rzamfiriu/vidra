@@ -1,0 +1,14 @@
+{
+  "name": "{{projectNameKebab}}",
+  "private": true,
+  "scripts": {
+    "build": "uinet build",
+    "dev": "uinet dev",
+    "dev:ui": "npm run dev --prefix ui",
+    "dev:host:macos": "dotnet build -t:Run -f net10.0-maccatalyst src/{{projectName}}.Host/{{projectName}}.Host.csproj",
+    "dev:host:windows": "dotnet build -t:Run -f net10.0-windows10.0.19041.0 src/{{projectName}}.Host/{{projectName}}.Host.csproj"
+  },
+  "devDependencies": {
+    "create-uinet-app": "{{cliVersion}}"
+  }
+}
