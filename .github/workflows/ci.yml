@@ -133,6 +133,17 @@ jobs:
             src/cli/create-uinet-app/package-lock.json
             src/sdk/uinet-js/package-lock.json
 
+      # The maui workload's MacCatalyst reference assemblies require the
+      # MacCatalyst SDK that ships with the latest Xcode. The runner image
+      # has multiple Xcodes installed, but xcode-select points at an older
+      # one by default, which makes ILLink fail with MT0180. Pin to the
+      # newest stable Xcode on the runner.
+      - name: Select latest Xcode (macOS)
+        if: runner.os == 'macOS'
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
       # ---- Fast bridge echo-ping (no MAUI workload needed) ----
       - name: Build UINet.Bridge.Smoke harness
         shell: bash
