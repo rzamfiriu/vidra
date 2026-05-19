@@ -1,5 +1,8 @@
 # .NET
-bin/
+# Narrowed from `bin/` so npm CLI bin scripts (e.g. src/cli/create-vidra-app/bin/)
+# are not accidentally ignored. .NET writes build output under bin/{Configuration}/.
+**/bin/Debug/
+**/bin/Release/
 obj/
 *.user
 *.suo

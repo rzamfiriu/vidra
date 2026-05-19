@@ -2,14 +2,14 @@
 
 ## Overview
 
-UINet uses a single `WebView` control as the host for all platforms, in both development and production. The framework owns the entire bridge between JavaScript and C#.
+Vidra uses a single `WebView` control as the host for all platforms, in both development and production. The framework owns the entire bridge between JavaScript and C#.
 
 ## Host Model
 
-- **Development**: the WebView loads `http://localhost:5173` (or a configurable `UINET_DEV_URL`), allowing Vite HMR and standard browser dev tools.
+- **Development**: the WebView loads `http://localhost:5173` (or a configurable `VIDRA_DEV_URL`), allowing Vite HMR and standard browser dev tools.
 - **Production**: the WebView loads bundled static assets from the app package (`Resources/Raw/wwwroot/index.html`).
 
-The same bridge works in both modes because it relies on a custom URL scheme (`uinet://bridge`) intercepted by the MAUI `Navigating` event, not on any host-specific API.
+The same bridge works in both modes because it relies on a custom URL scheme (`vidra://bridge`) intercepted by the MAUI `Navigating` event, not on any host-specific API.
 
 ## Bridge Protocol
 
@@ -51,4 +51,4 @@ Native modules implement `IBridgeModule` and are registered in `MauiProgram.cs`.
 
 ## JS SDK
 
-The TypeScript SDK (`@uinet/sdk`) wraps the transport layer and exposes `invoke()`, `on()`, and `capabilities()`. It auto-detects whether it is running inside a native host or a plain browser and falls back to console logging in browser-only mode.
+The TypeScript SDK (`@vidra-dev/sdk`) wraps the transport layer and exposes `invoke()`, `on()`, and `capabilities()`. It auto-detects whether it is running inside a native host or a plain browser and falls back to console logging in browser-only mode.

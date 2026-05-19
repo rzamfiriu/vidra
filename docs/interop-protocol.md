@@ -2,12 +2,12 @@
 
 ## Transport
 
-JS sends messages to C# via a hidden iframe navigating to `uinet://bridge?payload=<url-encoded-json>`. The MAUI `WebView.Navigating` handler intercepts this, cancels the navigation, and dispatches the request.
+JS sends messages to C# via a hidden iframe navigating to `vidra://bridge?payload=<url-encoded-json>`. The MAUI `WebView.Navigating` handler intercepts this, cancels the navigation, and dispatches the request.
 
 C# sends responses and events back via `WebView.EvaluateJavaScriptAsync`, calling global functions on the `window` object:
 
-- `window.__uinet_callback(response)` for request responses
-- `window.__uinet_onevent(event)` for pushed events
+- `window.__vidra_callback(response)` for request responses
+- `window.__vidra_onevent(event)` for pushed events
 
 ## Request Envelope
 

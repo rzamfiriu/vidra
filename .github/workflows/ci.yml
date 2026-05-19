@@ -29,60 +29,60 @@ jobs:
           node-version: "20"
           cache: "npm"
           cache-dependency-path: |
-            src/cli/create-uinet-app/package-lock.json
-            src/sdk/uinet-js/package-lock.json
+            src/cli/create-vidra-app/package-lock.json
+            src/sdk/vidra-js/package-lock.json
 
       # ---- C# unit + contract + codegen snapshots ----
       - name: Restore C# test projects
         run: |
-          dotnet restore tests/dotnet/UINet.Bridge.Tests/UINet.Bridge.Tests.csproj
-          dotnet restore tests/dotnet/UINet.CodeGen.Tests/UINet.CodeGen.Tests.csproj
-          dotnet restore tests/dotnet/UINet.Modules.FileSystem.Tests/UINet.Modules.FileSystem.Tests.csproj
-          dotnet restore tests/dotnet/UINet.Modules.Windowing.Tests/UINet.Modules.Windowing.Tests.csproj
+          dotnet restore tests/dotnet/Vidra.Bridge.Tests/Vidra.Bridge.Tests.csproj
+          dotnet restore tests/dotnet/Vidra.CodeGen.Tests/Vidra.CodeGen.Tests.csproj
+          dotnet restore tests/dotnet/Vidra.Modules.FileSystem.Tests/Vidra.Modules.FileSystem.Tests.csproj
+          dotnet restore tests/dotnet/Vidra.Modules.Windowing.Tests/Vidra.Modules.Windowing.Tests.csproj
 
       - name: Build C# test projects
         run: |
-          dotnet build tests/dotnet/UINet.Bridge.Tests/UINet.Bridge.Tests.csproj -c Release --no-restore
-          dotnet build tests/dotnet/UINet.CodeGen.Tests/UINet.CodeGen.Tests.csproj -c Release --no-restore
-          dotnet build tests/dotnet/UINet.Modules.FileSystem.Tests/UINet.Modules.FileSystem.Tests.csproj -c Release --no-restore
-          dotnet build tests/dotnet/UINet.Modules.Windowing.Tests/UINet.Modules.Windowing.Tests.csproj -c Release --no-restore
+          dotnet build tests/dotnet/Vidra.Bridge.Tests/Vidra.Bridge.Tests.csproj -c Release --no-restore
+          dotnet build tests/dotnet/Vidra.CodeGen.Tests/Vidra.CodeGen.Tests.csproj -c Release --no-restore
+          dotnet build tests/dotnet/Vidra.Modules.FileSystem.Tests/Vidra.Modules.FileSystem.Tests.csproj -c Release --no-restore
+          dotnet build tests/dotnet/Vidra.Modules.Windowing.Tests/Vidra.Modules.Windowing.Tests.csproj -c Release --no-restore
 
-      - name: Run UINet.Bridge.Tests
-        run: dotnet test tests/dotnet/UINet.Bridge.Tests/UINet.Bridge.Tests.csproj -c Release --no-build --logger "trx;LogFileName=bridge.trx"
+      - name: Run Vidra.Bridge.Tests
+        run: dotnet test tests/dotnet/Vidra.Bridge.Tests/Vidra.Bridge.Tests.csproj -c Release --no-build --logger "trx;LogFileName=bridge.trx"
 
-      - name: Run UINet.CodeGen.Tests
-        run: dotnet test tests/dotnet/UINet.CodeGen.Tests/UINet.CodeGen.Tests.csproj -c Release --no-build --logger "trx;LogFileName=codegen.trx"
+      - name: Run Vidra.CodeGen.Tests
+        run: dotnet test tests/dotnet/Vidra.CodeGen.Tests/Vidra.CodeGen.Tests.csproj -c Release --no-build --logger "trx;LogFileName=codegen.trx"
 
-      - name: Run UINet.Modules.FileSystem.Tests
-        run: dotnet test tests/dotnet/UINet.Modules.FileSystem.Tests/UINet.Modules.FileSystem.Tests.csproj -c Release --no-build --logger "trx;LogFileName=modules-filesystem.trx"
+      - name: Run Vidra.Modules.FileSystem.Tests
+        run: dotnet test tests/dotnet/Vidra.Modules.FileSystem.Tests/Vidra.Modules.FileSystem.Tests.csproj -c Release --no-build --logger "trx;LogFileName=modules-filesystem.trx"
 
-      - name: Run UINet.Modules.Windowing.Tests
-        run: dotnet test tests/dotnet/UINet.Modules.Windowing.Tests/UINet.Modules.Windowing.Tests.csproj -c Release --no-build --logger "trx;LogFileName=modules-windowing.trx"
+      - name: Run Vidra.Modules.Windowing.Tests
+        run: dotnet test tests/dotnet/Vidra.Modules.Windowing.Tests/Vidra.Modules.Windowing.Tests.csproj -c Release --no-build --logger "trx;LogFileName=modules-windowing.trx"
 
       # ---- TypeScript SDK ----
       - name: Install SDK dependencies
-        working-directory: src/sdk/uinet-js
+        working-directory: src/sdk/vidra-js
         run: npm ci || npm install
 
       - name: Type-check SDK
-        working-directory: src/sdk/uinet-js
+        working-directory: src/sdk/vidra-js
         run: npx tsc --noEmit
 
       - name: Run SDK tests
-        working-directory: src/sdk/uinet-js
+        working-directory: src/sdk/vidra-js
         run: npm test
 
       # ---- TypeScript CLI ----
       - name: Install CLI dependencies
-        working-directory: src/cli/create-uinet-app
+        working-directory: src/cli/create-vidra-app
         run: npm ci || npm install
 
       - name: Run CLI tests (unit + scaffold integration)
-        working-directory: src/cli/create-uinet-app
+        working-directory: src/cli/create-vidra-app
         run: npm test
 
       - name: Build CLI
-        working-directory: src/cli/create-uinet-app
+        working-directory: src/cli/create-vidra-app
         run: npm run build
 
       - name: Upload test results
@@ -95,8 +95,8 @@ jobs:
 
   # Per-OS smoke tier: prove that (a) the real C# bridge wire format
   # round-trips correctly through stdio on each target OS using the
-  # UINet.Bridge.Smoke harness and the tests/smoke/echo-ping.mjs driver,
-  # and (b) the scaffolded template from create-uinet-app builds end-to-end
+  # Vidra.Bridge.Smoke harness and the tests/smoke/echo-ping.mjs driver,
+  # and (b) the scaffolded template from create-vidra-app builds end-to-end
   # against locally-packed NuGets for the platform-native TFM.
   #
   # MAUI workloads are only installed for the template build step; the
@@ -130,8 +130,8 @@ jobs:
           node-version: "20"
           cache: "npm"
           cache-dependency-path: |
-            src/cli/create-uinet-app/package-lock.json
-            src/sdk/uinet-js/package-lock.json
+            src/cli/create-vidra-app/package-lock.json
+            src/sdk/vidra-js/package-lock.json
 
       # Pin xcode-select to the newest Xcode actually present on the
       # runner image. As of this writing the macos-latest image tops out
@@ -156,16 +156,16 @@ jobs:
           xcodebuild -version
 
       # ---- Fast bridge echo-ping (no MAUI workload needed) ----
-      - name: Build UINet.Bridge.Smoke harness
+      - name: Build Vidra.Bridge.Smoke harness
         shell: bash
         run: |
-          dotnet build tests/dotnet/UINet.Bridge.Smoke/UINet.Bridge.Smoke.csproj \
+          dotnet build tests/dotnet/Vidra.Bridge.Smoke/Vidra.Bridge.Smoke.csproj \
             -c Release
 
       - name: Run echo-ping smoke over stdio
         shell: bash
         env:
-          UINET_SMOKE_CONFIG: Release
+          VIDRA_SMOKE_CONFIG: Release
         run: node tests/smoke/echo-ping.mjs
 
       # ---- Template build smoke (requires MAUI workload) ----
@@ -189,14 +189,14 @@ jobs:
 
       - name: Build SDK
         shell: bash
-        working-directory: src/sdk/uinet-js
+        working-directory: src/sdk/vidra-js
         run: |
           npm ci || npm install
           npm run build
 
       - name: Build and link CLI
         shell: bash
-        working-directory: src/cli/create-uinet-app
+        working-directory: src/cli/create-vidra-app
         run: |
           npm ci || npm install
           npm run build
@@ -205,24 +205,24 @@ jobs:
         shell: bash
         run: ./pack-local.sh
 
-      - name: Scaffold a throwaway app with create-uinet-app
+      - name: Scaffold a throwaway app with create-vidra-app
         shell: bash
         working-directory: ${{ runner.temp }}
         run: |
-          node "$GITHUB_WORKSPACE/src/cli/create-uinet-app/dist/index.js" \
-            uinet-smoke --app-id=com.uinet.smoke
-          ls uinet-smoke
+          node "$GITHUB_WORKSPACE/src/cli/create-vidra-app/dist/index.js" \
+            vidra-smoke --app-id=com.vidra.smoke
+          ls vidra-smoke
 
       - name: dotnet restore scaffolded host project (${{ matrix.tfm }})
         shell: bash
-        working-directory: ${{ runner.temp }}/uinet-smoke
+        working-directory: ${{ runner.temp }}/vidra-smoke
         run: |
           dotnet restore src/UinetSmoke.Host/UinetSmoke.Host.csproj \
             -p:TargetFramework=${{ matrix.tfm }}
 
       - name: dotnet build scaffolded host project (${{ matrix.tfm }})
         shell: bash
-        working-directory: ${{ runner.temp }}/uinet-smoke
+        working-directory: ${{ runner.temp }}/vidra-smoke
         run: |
           dotnet build src/UinetSmoke.Host/UinetSmoke.Host.csproj \
             -c Debug \
@@ -231,7 +231,7 @@ jobs:
 
       - name: Build scaffolded UI (Vite)
         shell: bash
-        working-directory: ${{ runner.temp }}/uinet-smoke/ui
+        working-directory: ${{ runner.temp }}/vidra-smoke/ui
         run: |
           npm ci || npm install
           npm run build --if-present

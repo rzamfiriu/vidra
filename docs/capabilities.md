@@ -72,6 +72,6 @@ Notes:
 ## Querying Capabilities at Runtime
 
 ```typescript
-const caps = await uinet.capabilities();
+const caps = await vidra.capabilities();
 // { filesystem: ['readText', 'writeText', ...], clipboard: [...], ... }
 ```
