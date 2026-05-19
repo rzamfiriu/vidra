@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Vidra.Modules.FileSystem.Tests</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="FluentAssertions" Version="6.12.2" />
+    <PackageReference Include="coverlet.collector" Version="6.0.2">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\bridge\Vidra.Bridge\Vidra.Bridge.csproj" />
+  </ItemGroup>
+
+  <!--
+    The production Vidra.Modules.FileSystem project sets <UseMaui>true</UseMaui>
+    for consistency with other modules, which makes it unbuildable on a Linux
+    runner without the MAUI workload. The source file itself is MAUI-free, so
+    we link it directly into this test project. If the module ever gains a
+    MAUI dependency this will break loudly and we'll need to move the portable
+    bits into their own file.
+  -->
+  <ItemGroup>
+    <Compile Include="..\..\..\src\modules\Vidra.Modules.FileSystem\FileSystemModule.cs"
+             Link="Linked\FileSystemModule.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <Using Include="FluentAssertions" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,37 @@
+<Project>
+
+  <!--
+    Import this file in any module .csproj to auto-generate TypeScript proxies on build.
+
+    Usage in your .csproj:
+      <Import Project="path/to/Vidra.CodeGen.targets" />
+
+    Configurable properties (set before the Import):
+      VidraTsOutputDir      - Where to write .ts files (default: $(MSBuildProjectDirectory)/generated)
+      VidraSdkImport        - The import path for @vidra-dev/sdk (default: @vidra-dev/sdk)
+      VidraCodeGenProject   - Path to the Vidra.CodeGen.csproj (auto-detected in monorepo)
+      VidraGenerateTs       - Set to "false" to disable codegen (default: true)
+  -->
+
+  <PropertyGroup>
+    <VidraGenerateTs Condition="'$(VidraGenerateTs)' == ''">true</VidraGenerateTs>
+    <VidraTsOutputDir Condition="'$(VidraTsOutputDir)' == ''">$(MSBuildProjectDirectory)/generated</VidraTsOutputDir>
+    <VidraSdkImport Condition="'$(VidraSdkImport)' == ''">@vidra-dev/sdk</VidraSdkImport>
+    <VidraCodeGenProject Condition="'$(VidraCodeGenProject)' == ''">$(MSBuildThisFileDirectory)/../../tools/Vidra.CodeGen/Vidra.CodeGen.csproj</VidraCodeGenProject>
+  </PropertyGroup>
+
+  <Target Name="VidraCodeGen"
+          AfterTargets="Build"
+          Condition="'$(VidraGenerateTs)' == 'true' AND '$(TargetFramework)' != ''">
+
+    <Message Importance="high" Text="[Vidra] Generating TypeScript proxies from $(TargetPath)..." />
+
+    <Exec Command="dotnet run --configuration $(Configuration) --no-build --project &quot;$(VidraCodeGenProject)&quot; -- generate --assembly &quot;$(TargetPath)&quot; --output &quot;$(VidraTsOutputDir)&quot; --sdk-import &quot;$(VidraSdkImport)&quot;"
+          WorkingDirectory="$(MSBuildProjectDirectory)"
+          IgnoreExitCode="false" />
+
+    <Message Importance="high" Text="[Vidra] TypeScript proxies written to $(VidraTsOutputDir)" />
+
+  </Target>
+
+</Project>

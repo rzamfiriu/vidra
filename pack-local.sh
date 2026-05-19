@@ -7,32 +7,32 @@ OUT_DIR="$SCRIPT_DIR/dist/packages"
 rm -rf "$OUT_DIR"
 mkdir -p "$OUT_DIR"
 
-echo "Packing UINet packages to $OUT_DIR ..."
+echo "Packing Vidra packages to $OUT_DIR ..."
 
-dotnet pack "$SCRIPT_DIR/src/bridge/UINet.Bridge/UINet.Bridge.csproj" \
+dotnet pack "$SCRIPT_DIR/src/bridge/Vidra.Bridge/Vidra.Bridge.csproj" \
   -c Release -o "$OUT_DIR" --no-restore 2>/dev/null || \
-dotnet pack "$SCRIPT_DIR/src/bridge/UINet.Bridge/UINet.Bridge.csproj" \
+dotnet pack "$SCRIPT_DIR/src/bridge/Vidra.Bridge/Vidra.Bridge.csproj" \
   -c Release -o "$OUT_DIR"
 
-dotnet pack "$SCRIPT_DIR/src/modules/UINet.Modules.FileSystem/UINet.Modules.FileSystem.csproj" \
+dotnet pack "$SCRIPT_DIR/src/modules/Vidra.Modules.FileSystem/Vidra.Modules.FileSystem.csproj" \
   -c Release -o "$OUT_DIR"
 
-dotnet pack "$SCRIPT_DIR/src/modules/UINet.Modules.Clipboard/UINet.Modules.Clipboard.csproj" \
+dotnet pack "$SCRIPT_DIR/src/modules/Vidra.Modules.Clipboard/Vidra.Modules.Clipboard.csproj" \
   -c Release -o "$OUT_DIR"
 
-dotnet pack "$SCRIPT_DIR/src/modules/UINet.Modules.Dialogs/UINet.Modules.Dialogs.csproj" \
+dotnet pack "$SCRIPT_DIR/src/modules/Vidra.Modules.Dialogs/Vidra.Modules.Dialogs.csproj" \
   -c Release -o "$OUT_DIR"
 
-dotnet pack "$SCRIPT_DIR/src/modules/UINet.Modules.Notifications/UINet.Modules.Notifications.csproj" \
+dotnet pack "$SCRIPT_DIR/src/modules/Vidra.Modules.Notifications/Vidra.Modules.Notifications.csproj" \
   -c Release -o "$OUT_DIR"
 
-dotnet pack "$SCRIPT_DIR/src/modules/UINet.Modules.AppLifecycle/UINet.Modules.AppLifecycle.csproj" \
+dotnet pack "$SCRIPT_DIR/src/modules/Vidra.Modules.AppLifecycle/Vidra.Modules.AppLifecycle.csproj" \
   -c Release -o "$OUT_DIR"
 
-dotnet pack "$SCRIPT_DIR/src/modules/UINet.Modules.Windowing/UINet.Modules.Windowing.csproj" \
+dotnet pack "$SCRIPT_DIR/src/modules/Vidra.Modules.Windowing/Vidra.Modules.Windowing.csproj" \
   -c Release -o "$OUT_DIR"
 
-dotnet pack "$SCRIPT_DIR/src/host/UINet.Host.Maui.Core/UINet.Host.Maui.Core.csproj" \
+dotnet pack "$SCRIPT_DIR/src/host/Vidra.Host.Maui.Core/Vidra.Host.Maui.Core.csproj" \
   -c Release -o "$OUT_DIR"
 
 echo ""

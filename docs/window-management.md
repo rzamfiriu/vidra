@@ -2,7 +2,7 @@
 
 ## Overview
 
-UINet now includes a built-in `appWindow` module for managing the primary native application window from the frontend.
+Vidra now includes a built-in `appWindow` module for managing the primary native application window from the frontend.
 
 The v1 design is intentionally simple:
 
@@ -92,7 +92,7 @@ These are explicitly deferred for now:
 
 ## Platform Notes
 
-- UINet targets `Windows` and `Mac Catalyst`.
+- Vidra targets `Windows` and `Mac Catalyst`.
 - `getCurrent()`, `configure()`, `setTitle()`, and `setSize()` are supported on both `Windows` and `Mac Catalyst`.
 - `center()`, `maximize()`, `minimize()`, `restore()`, and `setFullscreen()` are currently supported on `Windows`.
 - On `Mac Catalyst`, those state-changing actions return a managed `PlatformNotSupportedException` instead of attempting unsafe native window calls.

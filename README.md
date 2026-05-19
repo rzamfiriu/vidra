@@ -1,4 +1,4 @@
-# UINet
+# Vidra
 
 Cross-platform application framework: **React UI + .NET MAUI native layer**.
 
@@ -11,7 +11,7 @@ React / Any JS framework
         │
         │  WebView
         │
-   JS SDK  (@uinet/sdk)
+   JS SDK  (@vidra-dev/sdk)
         │
   Interop bridge (JS ↔ C#)
         │
@@ -26,17 +26,17 @@ The UI stack is pure web. Native capability lives in .NET.
 
 ```
 src/
-  cli/create-uinet-app/        # Scaffold CLI, uinet CLI, and starter template
-  bridge/UINet.Bridge/        # C# bridge runtime, dispatcher, message protocol
-  host/UINet.Host.Maui/       # MAUI app shell with WebView host
+  cli/create-vidra-app/        # Scaffold CLI, vidra CLI, and starter template
+  bridge/Vidra.Bridge/        # C# bridge runtime, dispatcher, message protocol
+  host/Vidra.Host.Maui/       # MAUI app shell with WebView host
   modules/
-    UINet.Modules.FileSystem/  # File read/write/list
-    UINet.Modules.Dialogs/     # Alert, confirm, prompt
-    UINet.Modules.Clipboard/   # Copy/paste
-    UINet.Modules.Notifications/ # Local notifications
-    UINet.Modules.AppLifecycle/  # App info, theme
-    UINet.Modules.Windowing/     # Primary window title/size/state
-  sdk/uinet-js/               # TypeScript SDK for the JS side
+    Vidra.Modules.FileSystem/  # File read/write/list
+    Vidra.Modules.Dialogs/     # Alert, confirm, prompt
+    Vidra.Modules.Clipboard/   # Copy/paste
+    Vidra.Modules.Notifications/ # Local notifications
+    Vidra.Modules.AppLifecycle/  # App info, theme
+    Vidra.Modules.Windowing/     # Primary window title/size/state
+  sdk/vidra-js/               # TypeScript SDK for the JS side
 samples/
   workspace-manager/           # Sample app (planned)
 docs/                          # Architecture, protocol, capabilities
@@ -54,30 +54,30 @@ tools/                         # CLI and build helpers (planned)
 ### Development
 
 ```bash
-# From a scaffolded UINet app root
+# From a scaffolded Vidra app root
 npm run dev
 ```
 
-`uinet dev` starts Vite and launches the native desktop host for the current OS.
+`vidra dev` starts Vite and launches the native desktop host for the current OS.
 
 To force a desktop target explicitly:
 
 ```bash
-uinet dev --target macos
-uinet dev --target windows
+vidra dev --target macos
+vidra dev --target windows
 ```
 
 ### Production Build
 
 ```bash
-uinet build
-uinet build --target macos
-uinet build --target windows
+vidra build
+vidra build --target macos
+vidra build --target windows
 ```
 
-On macOS, both `uinet dev` and `uinet build --target macos` try to re-sign the generated Mac Catalyst `.app`
-with a local signing identity before launch or packaging. By default UINet prefers the first available
-`Apple Development` identity, and you can override that selection with `UINET_MACOS_CODESIGN_KEY`.
+On macOS, both `vidra dev` and `vidra build --target macos` try to re-sign the generated Mac Catalyst `.app`
+with a local signing identity before launch or packaging. By default Vidra prefers the first available
+`Apple Development` identity, and you can override that selection with `VIDRA_MACOS_CODESIGN_KEY`.
 
 For actual end-user distribution, you should still use the appropriate Apple distribution signing flow
 and notarization.
@@ -85,16 +85,16 @@ and notarization.
 ## JS SDK Usage
 
 ```typescript
-import { uinet } from '@uinet/sdk';
+import { vidra } from '@vidra-dev/sdk';
 
 // Call a native module
-const { content } = await uinet.invoke('filesystem', 'readText', { path: '/tmp/notes.txt' });
+const { content } = await vidra.invoke('filesystem', 'readText', { path: '/tmp/notes.txt' });
 
 // Listen for native events
-uinet.on('app.resume', () => console.log('App resumed'));
+vidra.on('app.resume', () => console.log('App resumed'));
 
 // Discover available modules
-const caps = await uinet.capabilities();
+const caps = await vidra.capabilities();
 ```
 
 ## Targets

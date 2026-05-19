@@ -16,13 +16,13 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..", "..");
 
 const projectPath =
-  process.env.UINET_SMOKE_PROJECT ??
+  process.env.VIDRA_SMOKE_PROJECT ??
   resolve(
     repoRoot,
     "tests",
     "dotnet",
-    "UINet.Bridge.Smoke",
-    "UINet.Bridge.Smoke.csproj",
+    "Vidra.Bridge.Smoke",
+    "Vidra.Bridge.Smoke.csproj",
   );
 
 const args = [
@@ -31,7 +31,7 @@ const args = [
   "--project",
   projectPath,
   "-c",
-  process.env.UINET_SMOKE_CONFIG ?? "Release",
+  process.env.VIDRA_SMOKE_CONFIG ?? "Release",
 ];
 
 const child = spawn("dotnet", args, {
@@ -66,7 +66,7 @@ try {
     id: "smoke-1",
     module: "echo",
     method: "ping",
-    payload: { text: "hello, uinet" },
+    payload: { text: "hello, vidra" },
   });
 
   await waitFor(() => responses.length >= 1, 60_000);
@@ -76,11 +76,11 @@ try {
     throw new Error(`expected id=smoke-1, got id=${parsed.id}`);
   if (parsed.success !== true)
     throw new Error(`expected success=true, got ${JSON.stringify(parsed)}`);
-  if (parsed.data?.text !== "hello, uinet")
+  if (parsed.data?.text !== "hello, vidra")
     throw new Error(
-      `expected data.text='hello, uinet', got ${JSON.stringify(parsed.data)}`,
+      `expected data.text='hello, vidra', got ${JSON.stringify(parsed.data)}`,
     );
-  if (parsed.data?.length !== "hello, uinet".length)
+  if (parsed.data?.length !== "hello, vidra".length)
     throw new Error(
       `expected data.length=12, got ${JSON.stringify(parsed.data)}`,
     );

@@ -1,6 +1,6 @@
-# Testing UINet
+# Testing Vidra
 
-This doc describes how UINet is tested today and the manual checks that
+This doc describes how Vidra is tested today and the manual checks that
 _cannot_ be automated in CI (OS permission prompts, code signing, real
 window geometry, notification surfaces, etc.).
 
@@ -25,50 +25,50 @@ We follow a pyramid:
 
 | Layer       | Project / script                                            | Runs in CI            |
 | ----------- | ----------------------------------------------------------- | --------------------- |
-| Unit        | `tests/dotnet/UINet.Bridge.Tests`                           | `ubuntu-latest`       |
-| Unit        | `tests/dotnet/UINet.CodeGen.Tests` (incl. TS snapshots)     | `ubuntu-latest`       |
-| Unit        | `tests/dotnet/UINet.Modules.FileSystem.Tests`               | `ubuntu-latest`       |
-| Unit        | `tests/dotnet/UINet.Modules.Windowing.Tests`                | `ubuntu-latest`       |
-| Unit        | `src/sdk/uinet-js` Vitest (`client`, `transport`)           | `ubuntu-latest`       |
-| Unit        | `src/cli/create-uinet-app` Vitest (`utils`, `project`, ...) | `ubuntu-latest`       |
+| Unit        | `tests/dotnet/Vidra.Bridge.Tests`                           | `ubuntu-latest`       |
+| Unit        | `tests/dotnet/Vidra.CodeGen.Tests` (incl. TS snapshots)     | `ubuntu-latest`       |
+| Unit        | `tests/dotnet/Vidra.Modules.FileSystem.Tests`               | `ubuntu-latest`       |
+| Unit        | `tests/dotnet/Vidra.Modules.Windowing.Tests`                | `ubuntu-latest`       |
+| Unit        | `src/sdk/vidra-js` Vitest (`client`, `transport`)           | `ubuntu-latest`       |
+| Unit        | `src/cli/create-vidra-app` Vitest (`utils`, `project`, ...) | `ubuntu-latest`       |
 | Contract    | `tests/contract/fixtures/*.json` via `ContractFixtureTests` | `ubuntu-latest`       |
 | Contract    | Same fixtures via SDK `contract.test.ts`                    | `ubuntu-latest`       |
 | Integration | CLI `scaffold.integration.test.ts` (tmpdir scaffold)        | `ubuntu-latest`       |
-| Smoke       | `tests/dotnet/UINet.Bridge.Smoke` + `tests/smoke/echo-ping.mjs` | `windows-latest`, `macos-latest` |
+| Smoke       | `tests/dotnet/Vidra.Bridge.Smoke` + `tests/smoke/echo-ping.mjs` | `windows-latest`, `macos-latest` |
 | Smoke       | CLI scaffold + `dotnet build` of scaffolded host            | `windows-latest`, `macos-latest` |
 
 ### Running locally
 
 ```bash
 # C# unit + contract + codegen
-dotnet test tests/dotnet/UINet.Bridge.Tests/UINet.Bridge.Tests.csproj
-dotnet test tests/dotnet/UINet.CodeGen.Tests/UINet.CodeGen.Tests.csproj
-dotnet test tests/dotnet/UINet.Modules.FileSystem.Tests/UINet.Modules.FileSystem.Tests.csproj
-dotnet test tests/dotnet/UINet.Modules.Windowing.Tests/UINet.Modules.Windowing.Tests.csproj
+dotnet test tests/dotnet/Vidra.Bridge.Tests/Vidra.Bridge.Tests.csproj
+dotnet test tests/dotnet/Vidra.CodeGen.Tests/Vidra.CodeGen.Tests.csproj
+dotnet test tests/dotnet/Vidra.Modules.FileSystem.Tests/Vidra.Modules.FileSystem.Tests.csproj
+dotnet test tests/dotnet/Vidra.Modules.Windowing.Tests/Vidra.Modules.Windowing.Tests.csproj
 
 # SDK
-cd src/sdk/uinet-js && npm install && npm test
+cd src/sdk/vidra-js && npm install && npm test
 
 # CLI (includes scaffold-into-tmpdir integration)
-cd src/cli/create-uinet-app && npm install && npm test
+cd src/cli/create-vidra-app && npm install && npm test
 
 # Bridge echo-ping smoke (any OS)
-dotnet build tests/dotnet/UINet.Bridge.Smoke/UINet.Bridge.Smoke.csproj -c Release
-UINET_SMOKE_CONFIG=Release node tests/smoke/echo-ping.mjs
+dotnet build tests/dotnet/Vidra.Bridge.Smoke/Vidra.Bridge.Smoke.csproj -c Release
+VIDRA_SMOKE_CONFIG=Release node tests/smoke/echo-ping.mjs
 ```
 
 ### Updating code-gen snapshots
 
 The TypeScript emitter is pinned by golden files:
 
-- `tests/dotnet/UINet.CodeGen.Tests/Snapshots/sample.ts`
-- `tests/dotnet/UINet.CodeGen.Tests/Snapshots/index.ts`
+- `tests/dotnet/Vidra.CodeGen.Tests/Snapshots/sample.ts`
+- `tests/dotnet/Vidra.CodeGen.Tests/Snapshots/index.ts`
 
 If you intentionally change emitted TS, regenerate with:
 
 ```bash
-dotnet test tests/dotnet/UINet.CodeGen.Tests \
-  -e UINET_UPDATE_SNAPSHOTS=1
+dotnet test tests/dotnet/Vidra.CodeGen.Tests \
+  -e VIDRA_UPDATE_SNAPSHOTS=1
 ```
 
 Review the diff before committing — snapshot changes are part of the
@@ -94,12 +94,12 @@ Run them on a development machine for each platform you ship to
 
 ### 1. Scaffolding end-user flow
 
-- [ ] `npx create-uinet-app demo` scaffolds without errors in a clean dir.
+- [ ] `npx create-vidra-app demo` scaffolds without errors in a clean dir.
 - [ ] Entered app-id flows into `Info.plist` (macOS) / `Package.appxmanifest` (Windows).
 - [ ] `cd demo && npm run dev` brings up Vite + the native host, and the
       webview loads `http://localhost:5173` (or the configured port).
 - [ ] Closing the native window terminates the dev process cleanly.
-- [ ] `uinet build` produces a distributable artifact
+- [ ] `vidra build` produces a distributable artifact
       (`.app` / `.dmg` on macOS, `.msix`/`.exe` on Windows).
 
 ### 2. Windowing module
@@ -169,7 +169,7 @@ For each platform, run a UI that calls `appWindow` via the SDK and verify:
 
 ### 8. macOS code signing & notarization
 
-- [ ] `uinet build --target macos` signs the `.app` with the identity
+- [ ] `vidra build --target macos` signs the `.app` with the identity
       picked up from `resolveMacCodeSigningIdentity()` (see CLI
       `signing.ts`); if no identity is present, the build still succeeds
       with a clear warning.
@@ -197,7 +197,7 @@ For each platform, run a UI that calls `appWindow` via the SDK and verify:
 
 When adding a new bridge module:
 
-1. Add a minimal unit test under `tests/dotnet/UINet.Modules.<Name>.Tests`
+1. Add a minimal unit test under `tests/dotnet/Vidra.Modules.<Name>.Tests`
    that links the portable source file and asserts:
    - `[BridgeModule]` name and `[BridgeMethod]` list.
    - Argument validation via `BridgeDispatcher` round-trip JSON.

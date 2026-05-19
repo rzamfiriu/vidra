@@ -1,0 +1,68 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('osx'))">net10.0-maccatalyst</TargetFrameworks>
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('windows'))">net10.0-windows10.0.19041.0</TargetFrameworks>
+    <ValidateXcodeVersion>false</ValidateXcodeVersion>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Vidra.Host.Maui</RootNamespace>
+    <UseMaui>true</UseMaui>
+    <SingleProject>true</SingleProject>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+
+    <!-- App metadata -->
+    <ApplicationTitle>Vidra</ApplicationTitle>
+    <ApplicationIdGuid>A1B2C3D4-E5F6-7890-ABCD-EF1234567890</ApplicationIdGuid>
+    <ApplicationId>com.vidra.app</ApplicationId>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>0.1.0</ApplicationDisplayVersion>
+    <EnableCodeSigning Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">true</EnableCodeSigning>
+
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">15.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</SupportedOSPlatformVersion>
+
+    <!-- Unpackaged Win32-style app on Windows; no Package.appxmanifest required. -->
+    <WindowsPackageType Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">None</WindowsPackageType>
+
+    <!--
+      Skip the MacCatalyst managed linker in Debug to decouple compile-time
+      verification from the locally-installed Xcode version (see MT0180).
+      Release builds keep the default linker.
+    -->
+    <MtouchLink Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst' And '$(Configuration)' == 'Debug'">None</MtouchLink>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vidra.Host.Maui.Core\Vidra.Host.Maui.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Auto-generate TS proxies for all modules after the host builds -->
+  <PropertyGroup>
+    <VidraCodeGenProject>$(MSBuildThisFileDirectory)..\..\tools\Vidra.CodeGen\Vidra.CodeGen.csproj</VidraCodeGenProject>
+    <VidraTsOutputDir>$(MSBuildThisFileDirectory)..\..\sdk\vidra-js\src\generated</VidraTsOutputDir>
+    <VidraModulesDir>$(MSBuildThisFileDirectory)..\..\modules</VidraModulesDir>
+  </PropertyGroup>
+
+  <Target Name="VidraCodeGen" AfterTargets="Build" Condition="'$(TargetFramework)' != ''">
+    <ItemGroup>
+      <VidraModuleAssembly Include="$(VidraModulesDir)\Vidra.Modules.FileSystem\bin\$(Configuration)\net10.0\Vidra.Modules.FileSystem.dll" />
+      <VidraModuleAssembly Include="$(VidraModulesDir)\Vidra.Modules.Clipboard\bin\$(Configuration)\$(TargetFramework)\Vidra.Modules.Clipboard.dll" />
+      <VidraModuleAssembly Include="$(VidraModulesDir)\Vidra.Modules.Dialogs\bin\$(Configuration)\$(TargetFramework)\Vidra.Modules.Dialogs.dll" />
+      <VidraModuleAssembly Include="$(VidraModulesDir)\Vidra.Modules.Notifications\bin\$(Configuration)\$(TargetFramework)\Vidra.Modules.Notifications.dll" />
+      <VidraModuleAssembly Include="$(VidraModulesDir)\Vidra.Modules.AppLifecycle\bin\$(Configuration)\$(TargetFramework)\Vidra.Modules.AppLifecycle.dll" />
+      <VidraModuleAssembly Include="$(VidraModulesDir)\Vidra.Modules.Windowing\bin\$(Configuration)\$(TargetFramework)\Vidra.Modules.Windowing.dll" />
+    </ItemGroup>
+
+    <Message Importance="high" Text="[Vidra] Generating TypeScript proxies..." />
+    <Exec Command="dotnet run --configuration $(Configuration) --no-build --project &quot;$(VidraCodeGenProject)&quot; -- generate --assembly @(VidraModuleAssembly->'&quot;%(Identity)&quot;', ' ') --output &quot;$(VidraTsOutputDir)&quot; --sdk-import &quot;../singleton.js&quot;"
+          WorkingDirectory="$(MSBuildProjectDirectory)" />
+  </Target>
+
+</Project>

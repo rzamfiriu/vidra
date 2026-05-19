@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('osx'))">net10.0-maccatalyst</TargetFrameworks>
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('windows'))">net10.0-windows10.0.19041.0</TargetFrameworks>
+    <UseMaui>true</UseMaui>
+    <RootNamespace>Vidra.Hosting</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <PackageId>Vidra.Hosting.Maui</PackageId>
+    <Version>0.1.0</Version>
+    <Description>MAUI host infrastructure for Vidra — WebView bridge, DI extensions, and base page.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\bridge\Vidra.Bridge\Vidra.Bridge.csproj" />
+    <ProjectReference Include="..\..\modules\Vidra.Modules.FileSystem\Vidra.Modules.FileSystem.csproj" />
+    <ProjectReference Include="..\..\modules\Vidra.Modules.Dialogs\Vidra.Modules.Dialogs.csproj" />
+    <ProjectReference Include="..\..\modules\Vidra.Modules.Clipboard\Vidra.Modules.Clipboard.csproj" />
+    <ProjectReference Include="..\..\modules\Vidra.Modules.Notifications\Vidra.Modules.Notifications.csproj" />
+    <ProjectReference Include="..\..\modules\Vidra.Modules.AppLifecycle\Vidra.Modules.AppLifecycle.csproj" />
+    <ProjectReference Include="..\..\modules\Vidra.Modules.Windowing\Vidra.Modules.Windowing.csproj" />
+  </ItemGroup>
+
+</Project>

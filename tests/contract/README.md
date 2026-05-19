@@ -1,7 +1,7 @@
 # Bridge contract fixtures
 
-Shared JSON fixtures that both the C# dispatcher (`UINet.Bridge`) and the
-TypeScript SDK (`@uinet/sdk`) validate against. The goal is to keep the
+Shared JSON fixtures that both the C# dispatcher (`Vidra.Bridge`) and the
+TypeScript SDK (`@vidra-dev/sdk`) validate against. The goal is to keep the
 wire format stable across languages.
 
 Each file represents one canonical request or response on the bridge:
