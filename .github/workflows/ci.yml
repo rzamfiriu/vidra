@@ -217,14 +217,14 @@ jobs:
         shell: bash
         working-directory: ${{ runner.temp }}/vidra-smoke
         run: |
-          dotnet restore src/UinetSmoke.Host/UinetSmoke.Host.csproj \
+          dotnet restore src/VidraSmoke.Host/VidraSmoke.Host.csproj \
             -p:TargetFramework=${{ matrix.tfm }}
 
       - name: dotnet build scaffolded host project (${{ matrix.tfm }})
         shell: bash
         working-directory: ${{ runner.temp }}/vidra-smoke
         run: |
-          dotnet build src/UinetSmoke.Host/UinetSmoke.Host.csproj \
+          dotnet build src/VidraSmoke.Host/VidraSmoke.Host.csproj \
             -c Debug \
             -f ${{ matrix.tfm }} \
             --no-restore
