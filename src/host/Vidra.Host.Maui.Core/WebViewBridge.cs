@@ -11,6 +11,14 @@ namespace Vidra.Hosting;
 /// </summary>
 public sealed partial class WebViewBridge : IJsCallbackChannel
 {
+    /// <summary>
+    /// Name of the native message channel. JS posts to
+    /// <c>window.webkit.messageHandlers.vidra</c> (WKWebView) or
+    /// <c>window.chrome.webview</c> (WebView2); see the platform partials.
+    /// Kept in sync with <c>NATIVE_CHANNEL</c> in the JS SDK transport.
+    /// </summary>
+    private const string ChannelName = "vidra";
+
     private readonly BridgeDispatcher _dispatcher;
     private readonly ConcurrentDictionary<string, TaskCompletionSource<string>> _pendingReverseCalls = new();
     private int _reverseIdCounter;
@@ -27,6 +35,51 @@ public sealed partial class WebViewBridge : IJsCallbackChannel
 
         webView.Navigating += OnNavigating;
         webView.Navigated += OnNavigated;
+
+        // Preferred transport: a first-class native message channel. The
+        // custom-scheme navigation handling above remains as a fallback for
+        // platforms (or timing windows) where the channel isn't available.
+        AttachPlatformChannel(webView);
+    }
+
+    /// <summary>
+    /// Wires up the platform-native JS→C# message channel (WKWebView script
+    /// message handler / WebView2 web messages). Implemented per-platform.
+    /// </summary>
+    partial void AttachPlatformChannel(WebView webView);
+
+    /// <summary>
+    /// Handles a tagged frame (<c>{ "kind": "request" | "reverse", "data": ... }</c>)
+    /// received over the native message channel, reusing the same dispatch and
+    /// reverse-RPC paths as the custom-scheme transport.
+    /// </summary>
+    private void HandleNativeInbound(string frameJson) => _ = HandleNativeInboundAsync(frameJson);
+
+    private async Task HandleNativeInboundAsync(string frameJson)
+    {
+        string kind;
+        string dataJson;
+        try
+        {
+            using var doc = JsonDocument.Parse(frameJson);
+            var root = doc.RootElement;
+            kind = root.GetProperty("kind").GetString() ?? string.Empty;
+            dataJson = root.GetProperty("data").GetRawText();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Vidra] Failed to parse native frame: {ex.Message}");
+            return;
+        }
+
+        if (string.Equals(kind, "reverse", StringComparison.OrdinalIgnoreCase))
+        {
+            HandleReverseResponse(dataJson);
+            return;
+        }
+
+        var response = await _dispatcher.DispatchAsync(dataJson);
+        await PushToJsAsync($"window.__vidra_callback({response})");
     }
 
     private async void OnNavigated(object? sender, WebNavigatedEventArgs e)

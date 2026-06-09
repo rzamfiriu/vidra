@@ -14,6 +14,9 @@ export type {
 export {
   CustomSchemeTransport,
   BrowserFallbackTransport,
+  NativeMessageTransport,
+  hasNativeMessageChannel,
+  NATIVE_CHANNEL,
 } from "./transport.js";
 export type { Transport } from "./transport.js";
 export type {

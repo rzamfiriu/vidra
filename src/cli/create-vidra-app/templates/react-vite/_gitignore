@@ -1,6 +1,7 @@
 # Build artifacts
 dist/
 src/*/Resources/Raw/wwwroot/
+*.tsbuildinfo
 
 # .NET
 **/bin/

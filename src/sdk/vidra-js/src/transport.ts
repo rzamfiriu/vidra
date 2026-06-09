@@ -10,6 +10,74 @@ export interface Transport {
   sendReverse(response: ReverseResponse): void;
 }
 
+/**
+ * The script-message handler name registered by the native host. JS posts to
+ * `window.webkit.messageHandlers[NATIVE_CHANNEL]` (WKWebView) or, on Windows,
+ * to `window.chrome.webview` (WebView2).
+ */
+export const NATIVE_CHANNEL = "vidra";
+
+/** Tagged envelope used on the native message channel to disambiguate requests
+ * from reverse-RPC responses (the custom-scheme transport uses separate URLs). */
+type NativeFrame =
+  | { kind: "request"; data: BridgeRequest }
+  | { kind: "reverse"; data: ReverseResponse };
+
+interface NativePoster {
+  postMessage(message: string): void;
+}
+
+const appleChannel = (): NativePoster | undefined => {
+  const handler = (globalThis as any)?.webkit?.messageHandlers?.[NATIVE_CHANNEL];
+  return handler && typeof handler.postMessage === "function" ? handler : undefined;
+};
+
+const windowsChannel = (): NativePoster | undefined => {
+  const webview = (globalThis as any)?.chrome?.webview;
+  return webview && typeof webview.postMessage === "function" ? webview : undefined;
+};
+
+/** True when a first-class native message channel (WKWebView or WebView2) is
+ * available. Preferred over the custom-scheme transport because it has no URL
+ * length limit, no per-message iframe, and is binary-safe. */
+export const hasNativeMessageChannel = (): boolean =>
+  appleChannel() !== undefined || windowsChannel() !== undefined;
+
+/**
+ * Transport that uses the platform's native message channel:
+ * - Apple (WKWebView): `window.webkit.messageHandlers.vidra.postMessage(...)`
+ *   handled by a `WKScriptMessageHandler` on the C# side.
+ * - Windows (WebView2): `window.chrome.webview.postMessage(...)` handled by
+ *   `CoreWebView2.WebMessageReceived` on the C# side.
+ *
+ * Unlike {@link CustomSchemeTransport}, payloads are not URL-encoded into a
+ * navigation, so large messages (e.g. file contents) are not truncated.
+ */
+export class NativeMessageTransport implements Transport {
+  private readonly channel: NativePoster;
+
+  constructor(channel: NativePoster | undefined = appleChannel() ?? windowsChannel()) {
+    if (!channel) {
+      throw new Error(
+        "[vidra] No native message channel is available (expected WKWebView or WebView2).",
+      );
+    }
+    this.channel = channel;
+  }
+
+  send(request: BridgeRequest): void {
+    this.post({ kind: "request", data: request });
+  }
+
+  sendReverse(response: ReverseResponse): void {
+    this.post({ kind: "reverse", data: response });
+  }
+
+  private post(frame: NativeFrame): void {
+    this.channel.postMessage(JSON.stringify(frame));
+  }
+}
+
 export class CustomSchemeTransport implements Transport {
   send(request: BridgeRequest): void {
     const json = JSON.stringify(request);

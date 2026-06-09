@@ -58,6 +58,20 @@ describe("scaffoldDir", () => {
     expect(readme).toBe("# My App");
   });
 
+  it("restores dotfiles stored under a safe name (_gitignore -> .gitignore)", async () => {
+    await fs.outputFile(
+      path.join(srcDir, "_gitignore"),
+      "node_modules/\ndist/\n",
+    );
+
+    await scaffoldDir(srcDir, destDir, {});
+
+    expect(await fs.pathExists(path.join(destDir, ".gitignore"))).toBe(true);
+    expect(await fs.pathExists(path.join(destDir, "_gitignore"))).toBe(false);
+    const content = await fs.readFile(path.join(destDir, ".gitignore"), "utf8");
+    expect(content).toContain("node_modules/");
+  });
+
   it("does not substitute into binary files (images, etc.)", async () => {
     const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
     await fs.outputFile(path.join(srcDir, "logo.png"), bytes);

@@ -12,6 +12,8 @@ import {
   Transport,
   CustomSchemeTransport,
   BrowserFallbackTransport,
+  NativeMessageTransport,
+  hasNativeMessageChannel,
 } from "./transport.js";
 
 let _idCounter = 0;
@@ -58,16 +60,32 @@ export class VidraClient {
   }
 
   /**
-   * Lazily resolve the transport on first use. By the time the user interacts
-   * with the app, the C# host has had time to inject `window.__vidra_native`.
+   * Lazily resolve the transport on first use. Preference order:
+   *   1. an explicitly supplied transport
+   *   2. the native message channel (WKWebView / WebView2) when present
+   *   3. the custom-scheme transport when the host marker is set
+   *   4. the browser-only fallback
+   *
+   * The browser fallback is intentionally never cached: a native channel can
+   * become available shortly after load (e.g. the WKWebView script-message
+   * handler registers just after the page loads), so we keep re-detecting until
+   * a real native transport is found.
    */
   private get transport(): Transport {
-    if (!this._transport) {
-      this._transport =
-        this._explicitTransport ??
-        (isNativeHost() ? new CustomSchemeTransport() : new BrowserFallbackTransport());
+    if (this._explicitTransport) return this._explicitTransport;
+    if (this._transport) return this._transport;
+
+    const detected = this.detectTransport();
+    if (!(detected instanceof BrowserFallbackTransport)) {
+      this._transport = detected;
     }
-    return this._transport;
+    return detected;
+  }
+
+  private detectTransport(): Transport {
+    if (hasNativeMessageChannel()) return new NativeMessageTransport();
+    if (isNativeHost()) return new CustomSchemeTransport();
+    return new BrowserFallbackTransport();
   }
 
   /**

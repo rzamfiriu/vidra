@@ -92,18 +92,26 @@ const main = async (): Promise<void> => {
   // XML (NuGet.Config). On Windows, native separators are `\`, which JSON
   // rejects as invalid escapes (\a, \u, ...). `toTextPath` normalizes to
   // forward slashes, which npm and NuGet accept on every OS.
-  const localFeedExists = fs.existsSync(LOCAL_FEED_DIR);
-  const localFeedPath = localFeedExists ? toTextPath(LOCAL_FEED_DIR) : "";
+  // Detect whether we're running from the Vidra monorepo (source) vs installed
+  // from npm. The SDK source tree only exists in the monorepo, so it's the
+  // reliable signal — unlike the CLI's own package.json, which is always present.
+  // In the monorepo we wire to local file/feed refs so changes can be tested
+  // without publishing; otherwise we pin published versions.
+  const isMonorepo = fs.existsSync(path.join(LOCAL_SDK_DIR, "package.json"));
 
-  const localCliExists = fs.existsSync(path.join(LOCAL_CLI_DIR, "package.json"));
-  const cliRef = localCliExists
+  const localFeedExists = isMonorepo && fs.existsSync(LOCAL_FEED_DIR);
+  // Only emit the <add> local NuGet source when a local feed is actually
+  // present (monorepo dev). In published mode an empty source value breaks
+  // `dotnet restore`, so the element is omitted entirely.
+  const localFeedSource = localFeedExists
+    ? `    <add key="vidra-local" value="${toTextPath(LOCAL_FEED_DIR)}" />`
+    : "";
+
+  const cliRef = isMonorepo
     ? `file:${toTextPath(LOCAL_CLI_DIR)}`
     : `^${VIDRA_VERSION}`;
 
-  const localSdkExists = fs.existsSync(
-    path.join(LOCAL_SDK_DIR, "package.json"),
-  );
-  const sdkRef = localSdkExists
+  const sdkRef = isMonorepo
     ? `file:${toTextPath(LOCAL_SDK_DIR)}`
     : `^${SDK_VERSION}`;
 
@@ -116,7 +124,7 @@ const main = async (): Promise<void> => {
     "{{cliVersion}}": cliRef,
     "{{vidraVersion}}": VIDRA_VERSION,
     "{{sdkVersion}}": sdkRef,
-    "{{localFeedPath}}": localFeedPath,
+    "{{localFeedSource}}": localFeedSource,
   };
 
   const templateDir = path.join(TEMPLATES_DIR, "react-vite");
@@ -133,9 +141,14 @@ const main = async (): Promise<void> => {
     root,
   );
 
-  const uiDir = path.join(root, "ui");
   console.log(chalk.dim("  Installing npm dependencies..."));
-  const npmOk = tryExec("npm install", uiDir);
+  // The root install provides the `vidra` CLI binary (via the create-vidra-app
+  // devDependency) that the `dev`/`build` scripts call; the ui install provides
+  // React/Vite/@vidra-dev/sdk. They are separate package roots, not workspaces.
+  const uiDir = path.join(root, "ui");
+  const rootNpmOk = tryExec("npm install", root);
+  const uiNpmOk = tryExec("npm install", uiDir);
+  const npmOk = rootNpmOk && uiNpmOk;
 
   console.log();
   console.log(chalk.green("  Done! ") + "Your Vidra app is ready.\n");
@@ -146,7 +159,7 @@ const main = async (): Promise<void> => {
         " local feed \u2192 " +
         chalk.cyan(LOCAL_FEED_DIR),
     );
-  } else {
+  } else if (isMonorepo) {
     console.log(
       chalk.yellow("  Note: ") +
         "Local NuGet feed not found. Run " +
@@ -155,14 +168,12 @@ const main = async (): Promise<void> => {
     );
   }
 
-  if (localSdkExists) {
+  if (isMonorepo) {
     console.log(
       chalk.dim("  npm:  ") +
         " @vidra-dev/sdk \u2192 " +
         chalk.cyan(LOCAL_SDK_DIR),
     );
-  }
-  if (localCliExists) {
     console.log(
       chalk.dim("  npm:  ") +
         " create-vidra-app \u2192 " +
@@ -174,8 +185,10 @@ const main = async (): Promise<void> => {
   if (!npmOk) {
     console.log(
       chalk.yellow("  Note: ") +
-        "`npm install` had errors. Run " +
-        chalk.cyan("cd ui && npm install") +
+        "`npm install` had errors. Re-run " +
+        chalk.cyan("npm install") +
+        " in the project root and in " +
+        chalk.cyan("ui/") +
         " to retry.\n",
     );
   }

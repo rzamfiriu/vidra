@@ -4,18 +4,44 @@
   "description": "Framework-agnostic TypeScript SDK for Vidra bridge (JS ↔ .NET MAUI)",
   "type": "module",
   "main": "dist/index.js",
+  "module": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": ["dist"],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "vidra",
+    "maui",
+    "webview",
+    "bridge",
+    "dotnet",
+    "desktop",
+    "react"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rzamfiriu/vidra.git",
+    "directory": "src/sdk/vidra-js"
+  },
+  "homepage": "https://github.com/rzamfiriu/vidra#readme",
+  "bugs": {
+    "url": "https://github.com/rzamfiriu/vidra/issues"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "devDependencies": {
     "jsdom": "^25.0.1",
     "typescript": "^5.7.0",
     "vitest": "^2.1.4"
-  },
-  "license": "MIT"
+  }
 }

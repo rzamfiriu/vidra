@@ -1,6 +1,6 @@
 {
   "name": "create-vidra-app",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Scaffold a new Vidra application (React + .NET MAUI)",
   "type": "module",
   "bin": {
@@ -16,7 +16,8 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "vidra",
@@ -26,7 +27,19 @@
     "scaffold",
     "cli"
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rzamfiriu/vidra.git",
+    "directory": "src/cli/create-vidra-app"
+  },
+  "homepage": "https://github.com/rzamfiriu/vidra#readme",
+  "bugs": {
+    "url": "https://github.com/rzamfiriu/vidra/issues"
+  },
   "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
     "chalk": "^5.4.1",
     "fs-extra": "^11.2.0",

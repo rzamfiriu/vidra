@@ -1,0 +1,21 @@
+<Project>
+
+  <!--
+    Shared NuGet package metadata for all Vidra packages. Per-project csprojs
+    still own PackageId, Version, and Description. Non-packable projects (the
+    demo host app, the CodeGen tool) simply ignore these properties.
+  -->
+  <PropertyGroup>
+    <Authors>rzamfiriu</Authors>
+    <Company>Vidra</Company>
+    <Product>Vidra</Product>
+    <Copyright>Copyright © rzamfiriu</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/rzamfiriu/vidra</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/rzamfiriu/vidra.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>vidra;maui;webview;react;desktop;cross-platform</PackageTags>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+  </PropertyGroup>
+
+</Project>

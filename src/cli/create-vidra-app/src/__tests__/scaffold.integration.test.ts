@@ -32,7 +32,7 @@ describe("scaffold integration", () => {
       "{{cliVersion}}": "0.1.0",
       "{{vidraVersion}}": "0.1.0",
       "{{sdkVersion}}": "0.1.0",
-      "{{localFeedPath}}": "",
+      "{{localFeedSource}}": "",
     };
 
     await scaffoldDir(TEMPLATE_DIR, root, replacements);

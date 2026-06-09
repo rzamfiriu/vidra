@@ -1,0 +1,116 @@
+name: Release NuGet
+
+# Cross-platform NuGet release. Most Vidra packages target a platform-specific
+# TFM (net10.0-maccatalyst / net10.0-windows...) that can only be built on its
+# native OS, so we pack on each OS and then merge each package's per-OS builds
+# into a single multi-TFM package before pushing.
+#
+# Run from the Actions tab. Leave `push` unchecked for a dry run that packs,
+# merges, and uploads the merged packages as an artifact for inspection without
+# publishing. Re-run with `push` checked to publish to nuget.org.
+#
+# Requires repository secret: NUGET_API_KEY (nuget.org push key, owner = vidra,
+# glob pattern Vidra.*).
+
+on:
+  workflow_dispatch:
+    inputs:
+      push:
+        description: "Publish merged packages to nuget.org (otherwise dry-run only)"
+        type: boolean
+        default: false
+
+jobs:
+  pack:
+    name: Pack (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            maui-workload: maui
+            artifact: nupkgs-macos
+          - os: windows-latest
+            maui-workload: maui-windows
+            artifact: nupkgs-windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.x
+
+      # See ci.yml: the macos runner image tops out below the Xcode the newest
+      # maccatalyst manifest wants, so pin the newest available and skip the
+      # manifest update during workload install.
+      - name: Select newest available Xcode (macOS)
+        if: runner.os == 'macOS'
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "26.3"
+
+      - name: Install MAUI workload (${{ matrix.maui-workload }})
+        shell: bash
+        run: dotnet workload install ${{ matrix.maui-workload }} --skip-manifest-update
+
+      - name: Pack all Vidra packages (Release)
+        shell: bash
+        run: ./pack-local.sh
+
+      - name: Upload per-OS packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/packages/*.nupkg
+          if-no-files-found: error
+
+  merge-and-push:
+    name: Merge${{ inputs.push && ' + push' || ' (dry run)' }}
+    needs: pack
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            10.0.x
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Download macOS packages
+        uses: actions/download-artifact@v4
+        with:
+          name: nupkgs-macos
+          path: pkg-macos
+
+      - name: Download Windows packages
+        uses: actions/download-artifact@v4
+        with:
+          name: nupkgs-windows
+          path: pkg-windows
+
+      - name: Merge per-OS packages into multi-TFM packages
+        run: python3 scripts/merge-nupkgs.py --inputs pkg-macos pkg-windows --output merged
+
+      - name: Upload merged packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: nupkgs-merged
+          path: merged/*.nupkg
+          if-no-files-found: error
+
+      - name: Push to nuget.org
+        if: ${{ inputs.push }}
+        run: |
+          dotnet nuget push "merged/*.nupkg" \
+            --api-key "${{ secrets.NUGET_API_KEY }}" \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate

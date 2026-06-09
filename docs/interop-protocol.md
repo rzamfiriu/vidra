@@ -2,12 +2,40 @@
 
 ## Transport
 
-JS sends messages to C# via a hidden iframe navigating to `vidra://bridge?payload=<url-encoded-json>`. The MAUI `WebView.Navigating` handler intercepts this, cancels the navigation, and dispatches the request.
+### JS → C#
 
-C# sends responses and events back via `WebView.EvaluateJavaScriptAsync`, calling global functions on the `window` object:
+The SDK auto-selects the best available channel at runtime:
+
+1. **Native message channel (preferred).** A first-class, binary-safe channel with
+   no payload-size limit:
+   - Apple (WKWebView): `window.webkit.messageHandlers.vidra.postMessage(frame)`,
+     received by a `WKScriptMessageHandler` on the host.
+   - Windows (WebView2): `window.chrome.webview.postMessage(frame)`, received by
+     `CoreWebView2.WebMessageReceived` on the host.
+
+   Because a single channel carries both directions of traffic, messages are
+   tagged frames so requests and reverse-RPC responses can be told apart:
+
+   ```json
+   { "kind": "request", "data": { ...request envelope... } }
+   { "kind": "reverse", "data": { ...reverse response... } }
+   ```
+
+2. **Custom-scheme navigation (fallback).** A hidden iframe navigates to
+   `vidra://bridge?payload=<url-encoded-json>` (or `vidra://reverse?payload=...`),
+   intercepted by the MAUI `WebView.Navigating` handler, which cancels the
+   navigation and dispatches the request. This path is used when the native
+   channel is unavailable. It is subject to URL-length limits, so large payloads
+   (e.g. file contents) require the native channel.
+
+### C# → JS
+
+C# sends responses, events, and reverse-RPC calls back via
+`WebView.EvaluateJavaScriptAsync`, calling global functions on the `window` object:
 
 - `window.__vidra_callback(response)` for request responses
 - `window.__vidra_onevent(event)` for pushed events
+- `window.__vidra_invoke(request)` for reverse RPC calls
 
 ## Request Envelope
 

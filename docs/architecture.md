@@ -9,7 +9,11 @@ Vidra uses a single `WebView` control as the host for all platforms, in both dev
 - **Development**: the WebView loads `http://localhost:5173` (or a configurable `VIDRA_DEV_URL`), allowing Vite HMR and standard browser dev tools.
 - **Production**: the WebView loads bundled static assets from the app package (`Resources/Raw/wwwroot/index.html`).
 
-The same bridge works in both modes because it relies on a custom URL scheme (`vidra://bridge`) intercepted by the MAUI `Navigating` event, not on any host-specific API.
+The same bridge works in both modes. For JS→C# traffic it prefers a first-class
+native message channel (WKWebView script messages / WebView2 web messages) and
+falls back to a custom URL scheme (`vidra://bridge`) intercepted by the MAUI
+`Navigating` event when no native channel is available. See
+[interop-protocol.md](./interop-protocol.md) for details.
 
 ## Bridge Protocol
 

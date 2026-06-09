@@ -2,7 +2,7 @@ import chalk from "chalk";
 import { buildCommand } from "./commands/build.js";
 import { devCommand } from "./commands/dev.js";
 
-const VERSION = "0.1.0";
+const VERSION = "0.1.2";
 
 const printHelp = (): void => {
   console.log(`

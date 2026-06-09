@@ -3,6 +3,12 @@ import path from "node:path";
 
 export type Replacements = Record<string, string>;
 
+// npm strips/renames dotfiles (notably `.gitignore`) from published tarballs, so
+// such files are stored under a safe name in the template and restored on copy.
+const TEMPLATE_FILE_RENAMES: Record<string, string> = {
+  _gitignore: ".gitignore",
+};
+
 const TEXT_EXTS = new Set([
   ".cs",
   ".csproj",
@@ -35,7 +41,9 @@ export const scaffoldDir = async (
 
   for (const entry of entries) {
     const srcPath = path.join(srcDir, entry.name);
-    const destName = applyReplacements(entry.name, replacements);
+    const destName =
+      TEMPLATE_FILE_RENAMES[entry.name] ??
+      applyReplacements(entry.name, replacements);
     const destPath = path.join(destDir, destName);
 
     if (entry.isDirectory()) {
