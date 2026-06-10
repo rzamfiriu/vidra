@@ -3,6 +3,7 @@ import fs from "fs-extra";
 import { execSync } from "node:child_process";
 import chalk from "chalk";
 import { parseArgs } from "../utils.js";
+import { formatBuildError, formatProcessError } from "../exec.js";
 import {
   detectPlatform,
   detectProject,
@@ -15,7 +16,9 @@ import { windowsTarget } from "../targets/windows.js";
 import {
   ensureMauiWorkload,
   looksLikeMissingWorkload,
+  looksLikeMissingXcode,
   printWorkloadHint,
+  printXcodeHint,
 } from "../doctor.js";
 
 const VERSION = "0.1.0";
@@ -102,9 +105,8 @@ export const buildCommand = async (argv: string[]): Promise<void> => {
       displayVersion: project.displayVersion,
     });
   } catch (e: unknown) {
-    const err = e as { stderr?: Buffer; message: string };
     console.error(chalk.red(`  Packaging failed.`));
-    console.error(chalk.dim(err.stderr?.toString() || err.message));
+    console.error(chalk.dim(formatProcessError(e)));
     process.exit(1);
   }
 
@@ -132,9 +134,8 @@ const stepBuildUi = (project: ProjectInfo, verbose: boolean): void => {
       stdio: verbose ? "inherit" : "pipe",
     });
   } catch (e: unknown) {
-    const err = e as { stderr?: Buffer; message: string };
     console.error(chalk.red("  Vite build failed."));
-    console.error(chalk.dim(err.stderr?.toString() || err.message));
+    console.error(chalk.dim(formatBuildError(e)));
     process.exit(1);
   }
   const elapsed = ((Date.now() - start) / 1000).toFixed(1);
@@ -194,11 +195,16 @@ const stepDotnetPublish = (
       },
     );
   } catch (e: unknown) {
-    const err = e as { stderr?: Buffer; message: string };
-    const output = err.stderr?.toString() || err.message;
+    const output = formatBuildError(e);
     console.error(chalk.red("  dotnet publish failed."));
     console.error(chalk.dim(output));
     if (looksLikeMissingWorkload(output)) printWorkloadHint();
+    else if (looksLikeMissingXcode(output)) printXcodeHint();
+    if (!verbose) {
+      console.error(
+        chalk.dim("  Re-run with --verbose for the full build log."),
+      );
+    }
     process.exit(1);
   }
 

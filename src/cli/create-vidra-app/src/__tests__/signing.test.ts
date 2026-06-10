@@ -101,7 +101,7 @@ describe("signMacAppBundleIfPossible", () => {
     expect(log).not.toHaveBeenCalled();
   });
 
-  it("warns and returns when no signing identity is discovered", () => {
+  it("ad-hoc signs when no developer identity is discovered", () => {
     setPlatform("darwin");
     execFileSyncMock.mockReturnValue(
       findIdentityOutput(["Mac Developer: None Useful"]),
@@ -109,9 +109,14 @@ describe("signMacAppBundleIfPossible", () => {
 
     signMacAppBundleIfPossible("/some/app.app", { verbose: false, log, warn });
 
-    expect(warn).toHaveBeenCalled();
-    // Only the security find-identity call - no codesign.
-    expect(execFileSyncMock).toHaveBeenCalledTimes(1);
+    // security find-identity (no usable identity) + ad-hoc codesign with "-".
+    expect(execFileSyncMock).toHaveBeenCalledWith(
+      "codesign",
+      ["--force", "--deep", "--sign", "-", "/some/app.app"],
+      expect.any(Object),
+    );
+    expect(log).toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it("codesigns using the resolved identity on darwin", () => {

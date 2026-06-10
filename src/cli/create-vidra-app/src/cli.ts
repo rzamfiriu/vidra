@@ -1,9 +1,9 @@
 import chalk from "chalk";
 import { buildCommand } from "./commands/build.js";
-import { devCommand } from "./commands/dev.js";
+import { devCommand, runCommand } from "./commands/dev.js";
 import { runDoctor } from "./doctor.js";
 
-const VERSION = "0.1.3";
+const VERSION = "0.1.5";
 
 const printHelp = (): void => {
   console.log(`
@@ -13,7 +13,8 @@ const printHelp = (): void => {
     vidra <command> [options]
 
   ${chalk.dim("Commands:")}
-    dev     Start the development environment
+    dev     Start the development environment (Vite + native host)
+    run     Build and launch the native host only (no Vite dev server)
     build   Build and package the application for distribution
     doctor  Check that your environment is set up to build Vidra apps
     help    Show this help message
@@ -21,6 +22,7 @@ const printHelp = (): void => {
   ${chalk.dim("Examples:")}
     vidra dev                   ${chalk.dim("# start Vite + native host")}
     vidra dev --target windows  ${chalk.dim("# run the Windows host")}
+    vidra run                   ${chalk.dim("# launch the host (UI served separately)")}
     vidra build                 ${chalk.dim("# auto-detect platform")}
     vidra build --target macos  ${chalk.dim("# macOS DMG")}
     vidra build --verbose       ${chalk.dim("# show full build output")}
@@ -35,6 +37,9 @@ const main = async (): Promise<void> => {
   switch (command) {
     case "dev":
       await devCommand(args.slice(1));
+      break;
+    case "run":
+      await runCommand(args.slice(1));
       break;
     case "build":
       await buildCommand(args.slice(1));

@@ -4,6 +4,7 @@ import {
   newestNet10Sdk,
   outputMentionsMaui,
   looksLikeMissingWorkload,
+  looksLikeMissingXcode,
 } from "../doctor.js";
 
 describe("hasNet10Sdk", () => {
@@ -83,6 +84,24 @@ describe("looksLikeMissingWorkload", () => {
   it("ignores unrelated build errors", () => {
     expect(
       looksLikeMissingWorkload("error CS1002: ; expected [App.Host.csproj]"),
+    ).toBe(false);
+  });
+});
+
+describe("looksLikeMissingXcode", () => {
+  it.each([
+    "error : A valid Xcode installation was not found at the configured location: '/Library/Developer/CommandLineTools'",
+    "error : Could not find a valid Xcode app bundle at '/Library/Developer/CommandLineTools'. Please verify that 'xcode-select -p' points to your Xcode installation.",
+    "For more information see https://aka.ms/macios-missing-xcode.",
+  ])("flags Xcode-related build errors", (output) => {
+    expect(looksLikeMissingXcode(output)).toBe(true);
+  });
+
+  it("does not flag a missing-workload error", () => {
+    expect(
+      looksLikeMissingXcode(
+        "error NETSDK1147: the following workloads must be installed: maui-maccatalyst",
+      ),
     ).toBe(false);
   });
 });

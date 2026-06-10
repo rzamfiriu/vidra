@@ -14,36 +14,36 @@ export const signMacAppBundleIfPossible = (
 ): void => {
   if (process.platform !== "darwin") return;
 
-  const codesignIdentity = resolveMacCodeSigningIdentity();
-  if (!codesignIdentity) {
-    options.warn(
-      chalk.yellow(
-        "  No usable macOS signing identity found. The app will remain ad-hoc signed.",
-      ),
-    );
-    options.warn(
-      chalk.yellow(
-        "  Set VIDRA_MACOS_CODESIGN_KEY to override identity selection if needed.",
-      ),
-    );
-    return;
-  }
+  // A real identity gives a fully signed bundle; when none exists we still
+  // re-sign ad-hoc ("-"). MAUI already ad-hoc signs Debug builds, but doing it
+  // ourselves with --force --deep guarantees a consistent, unbroken signature so
+  // the OS will actually launch the locally built app instead of killing it.
+  const identity = resolveMacCodeSigningIdentity();
+  const signWith = identity ?? "-";
+  const label = path.basename(appBundle);
 
   try {
     execFileSync(
       "codesign",
-      ["--force", "--deep", "--sign", codesignIdentity, appBundle],
+      ["--force", "--deep", "--sign", signWith, appBundle],
       {
         stdio: options.verbose ? "inherit" : "pipe",
       },
     );
     options.log(
-      `  ${chalk.dim("Signing:")}  ${chalk.cyan(path.basename(appBundle))} ${chalk.dim(`with ${codesignIdentity}`)}`,
+      identity
+        ? `  ${chalk.dim("Signing:")}  ${chalk.cyan(label)} ${chalk.dim(`with ${identity}`)}`
+        : `  ${chalk.dim("Signing:")}  ${chalk.cyan(label)} ${chalk.dim("ad-hoc (no developer identity)")}`,
     );
   } catch (error) {
     options.warn(
       chalk.yellow(
-        "  Failed to re-sign the macOS app bundle. It may remain ad-hoc signed.",
+        "  Could not code-sign the macOS app bundle; it may fail to launch.",
+      ),
+    );
+    options.warn(
+      chalk.yellow(
+        "  Install Xcode or the Command Line Tools (provides `codesign`), or set VIDRA_MACOS_CODESIGN_KEY.",
       ),
     );
     options.warn(chalk.dim(formatExecError(error)));

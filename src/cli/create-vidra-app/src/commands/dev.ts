@@ -9,11 +9,14 @@ import {
   type ProjectInfo,
 } from "../project.js";
 import { parseArgs } from "../utils.js";
+import { formatBuildError } from "../exec.js";
 import { signMacAppBundleIfPossible } from "../signing.js";
 import {
   ensureMauiWorkload,
   looksLikeMissingWorkload,
+  looksLikeMissingXcode,
   printWorkloadHint,
+  printXcodeHint,
 } from "../doctor.js";
 
 const VERSION = "0.1.0";
@@ -36,7 +39,21 @@ const TARGETS = {
 type DevTargetName = keyof typeof TARGETS;
 type DevTarget = (typeof TARGETS)[DevTargetName];
 
-export const devCommand = async (argv: string[]): Promise<void> => {
+export const devCommand = (argv: string[]): Promise<void> =>
+  startSession(argv, { vite: true });
+
+// `vidra run` builds and launches only the native host, without the Vite dev
+// server (use it when you're serving the UI separately). It launches the host
+// the same robust way `dev` does — a direct binary spawn on macOS — instead of
+// MSBuild's `-t:Run` target, which shells out to `open -a` and fails on locally
+// signed apps with a bare `MSB3073 ... exited with code 1`.
+export const runCommand = (argv: string[]): Promise<void> =>
+  startSession(argv, { vite: false });
+
+const startSession = async (
+  argv: string[],
+  opts: { vite: boolean },
+): Promise<void> => {
   const args = parseArgs(["_", "_", ...argv]);
   const targetName = (args["target"] as string) || detectPlatform();
   const verbose = !!args["verbose"];
@@ -63,13 +80,14 @@ export const devCommand = async (argv: string[]): Promise<void> => {
     process.exit(1);
   }
 
-  const session = new DevSession(project, target, viteUrl, verbose);
+  const session = new DevSession(project, target, viteUrl, verbose, opts);
   await session.run();
 };
 
 class DevSession {
   private readonly children: ChildProcess[] = [];
   private readonly buildConfig = process.env.VIDRA_BUILD_CONFIG || "Debug";
+  private readonly vite: boolean;
   private shuttingDown = false;
 
   constructor(
@@ -77,13 +95,18 @@ class DevSession {
     private readonly target: DevTarget,
     private readonly viteUrl: string,
     private readonly verbose: boolean,
-  ) {}
+    options: { vite?: boolean } = {},
+  ) {
+    this.vite = options.vite ?? true;
+  }
 
   async run(): Promise<void> {
     this.installSignalHandlers();
 
     console.log();
-    console.log(`  ${chalk.bold.cyan("vidra dev")} ${chalk.dim(`v${VERSION}`)}`);
+    console.log(
+      `  ${chalk.bold.cyan(this.vite ? "vidra dev" : "vidra run")} ${chalk.dim(`v${VERSION}`)}`,
+    );
     console.log();
     console.log(`  ${chalk.dim("Project:")}  ${chalk.cyan(this.project.projectName)}`);
     console.log(
@@ -91,28 +114,32 @@ class DevSession {
     );
     console.log();
 
-    const vite = this.startVite();
+    let vite: ChildProcess | undefined;
+    if (this.vite) {
+      vite = this.startVite();
 
-    try {
-      await waitForServer(this.viteUrl, POLL_TIMEOUT_MS);
-    } catch (error) {
-      console.error(
-        chalk.red(
-          `  ${(error as Error).message}`,
-        ),
+      try {
+        await waitForServer(this.viteUrl, POLL_TIMEOUT_MS);
+      } catch (error) {
+        console.error(chalk.red(`  ${(error as Error).message}`));
+        this.shutdown(1);
+      }
+
+      console.log(`  ${chalk.dim("Vite:")}     ${chalk.cyan(this.viteUrl)}`);
+      console.log();
+    } else {
+      console.log(
+        `  ${chalk.dim("UI:")}       ${chalk.cyan(this.viteUrl)} ${chalk.dim("(start it separately, e.g. `npm run dev:ui`)")}`,
       );
-      this.shutdown(1);
+      console.log();
     }
-
-    console.log(`  ${chalk.dim("Vite:")}     ${chalk.cyan(this.viteUrl)}`);
-    console.log();
 
     const host =
       this.target.name === "macos"
         ? this.launchMacosHost()
         : this.launchWindowsHost();
 
-    await waitForExit(vite, host);
+    await waitForExit(...(vite ? [vite, host] : [host]));
   }
 
   private installSignalHandlers(): void {
@@ -156,10 +183,16 @@ class DevSession {
         },
       );
     } catch (error) {
-      const output = formatExecError(error);
+      const output = formatBuildError(error);
       console.error(chalk.red("  MAUI build failed."));
       console.error(chalk.dim(output));
       if (looksLikeMissingWorkload(output)) printWorkloadHint();
+      else if (looksLikeMissingXcode(output)) printXcodeHint();
+      if (!this.verbose) {
+        console.error(
+          chalk.dim("  Re-run with --verbose for the full build log."),
+        );
+      }
       process.exit(1);
     }
 
@@ -231,7 +264,7 @@ class DevSession {
     prefixStream(child.stdout, tag);
     prefixStream(child.stderr, tag);
 
-    child.on("exit", (code) => {
+    child.on("exit", (code, signal) => {
       if (this.shuttingDown) return;
 
       if (tag === "ui") {
@@ -243,15 +276,26 @@ class DevSession {
         return;
       }
 
-      if (code !== null && code !== 0) {
-        console.error(chalk.red(`\n  ${label} exited with code ${code}.`));
+      const failed = (code !== null && code !== 0) || signal !== null;
+      if (failed) {
+        console.error(
+          chalk.red(
+            `\n  ${label} exited with ${signal ? `signal ${signal}` : `code ${code}`}.`,
+          ),
+        );
+        if (tag === "host" && this.target.name === "macos") {
+          printMacLaunchHint();
+        }
       }
-      this.shutdown(code ?? 0);
+      this.shutdown(code ?? (signal ? 1 : 0));
     });
 
     child.on("error", (error) => {
       if (this.shuttingDown) return;
       console.error(chalk.red(`\n  Failed to start ${label}: ${error.message}`));
+      if (tag === "host" && this.target.name === "macos") {
+        printMacLaunchHint();
+      }
       this.shutdown(1);
     });
 
@@ -335,11 +379,12 @@ const waitForServer = (url: string, timeoutMs: number): Promise<void> => {
   });
 };
 
-const waitForExit = (vite: ChildProcess, host: ChildProcess): Promise<void> => {
+const waitForExit = (...children: ChildProcess[]): Promise<void> => {
   return new Promise((resolve) => {
-    const resolveOnce = () => resolve();
-    vite.once("exit", resolveOnce);
-    host.once("exit", resolveOnce);
+    const resolveOnce = (): void => resolve();
+    for (const child of children) {
+      child.once("exit", resolveOnce);
+    }
   });
 };
 
@@ -399,13 +444,22 @@ const killChild = (child: ChildProcess): void => {
   child.kill("SIGTERM");
 };
 
-const formatExecError = (error: unknown): string => {
-  const err = error as { stderr?: Buffer | string; message: string };
-  if (Buffer.isBuffer(err.stderr)) {
-    return err.stderr.toString();
-  }
-  if (typeof err.stderr === "string") {
-    return err.stderr;
-  }
-  return err.message;
+const printMacLaunchHint = (): void => {
+  console.error();
+  console.error(chalk.yellow("  The host built but the app couldn't launch."));
+  console.error(
+    chalk.dim(
+      "  On macOS this is usually code signing / Gatekeeper for a locally built app:",
+    ),
+  );
+  console.error(
+    `    ${chalk.dim("•")} Install full Xcode, then run ${chalk.cyan("vidra doctor")} to verify`,
+  );
+  console.error(
+    `    ${chalk.dim("•")} Approve it once in Finder: right-click the ${chalk.cyan(".app")} and choose ${chalk.cyan("Open")}`,
+  );
+  console.error(
+    `    ${chalk.dim("•")} Or provide a signing identity via ${chalk.cyan("VIDRA_MACOS_CODESIGN_KEY")}`,
+  );
+  console.error();
 };

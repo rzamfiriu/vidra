@@ -80,6 +80,18 @@ export const looksLikeMissingWorkload = (output: string): boolean =>
     /to\s+install\s+the\s+.*workload/i,
   ].some((re) => re.test(output));
 
+/**
+ * Heuristic: does build output indicate full Xcode is missing? Mac Catalyst
+ * builds need Xcode.app, not just the Command Line Tools, and fail with these
+ * messages from Xamarin.Shared.targets when `xcode-select -p` points at CLT.
+ */
+export const looksLikeMissingXcode = (output: string): boolean =>
+  [
+    /valid\s+Xcode\s+installation\s+was\s+not\s+found/i,
+    /could\s+not\s+find\s+a\s+valid\s+Xcode\s+app\s+bundle/i,
+    /macios-missing-xcode/i,
+  ].some((re) => re.test(output));
+
 // --- Environment probes ------------------------------------------------------
 
 const checkDotnetSdk = (): Requirement => {
@@ -336,5 +348,26 @@ export const printWorkloadHint = (): void => {
   console.error(
     `      ${chalk.dim("check:")} ${chalk.cyan("vidra doctor")}`,
   );
+  console.error();
+};
+
+/** Prints an actionable hint when a build error looks like missing full Xcode. */
+export const printXcodeHint = (): void => {
+  console.error();
+  console.error(
+    `  ${chalk.yellow(
+      "Mac Catalyst builds need the full Xcode app, not just the Command Line Tools.",
+    )}`,
+  );
+  console.error(`      ${chalk.dim("1.")} Install Xcode from the App Store`);
+  console.error(
+    `      ${chalk.dim("2.")} ${chalk.cyan(
+      "sudo xcode-select -s /Applications/Xcode.app/Contents/Developer",
+    )}`,
+  );
+  console.error(
+    `      ${chalk.dim("3.")} ${chalk.cyan("sudo xcodebuild -runFirstLaunch")}`,
+  );
+  console.error(`      ${chalk.dim("check:")} ${chalk.cyan("vidra doctor")}`);
   console.error();
 };

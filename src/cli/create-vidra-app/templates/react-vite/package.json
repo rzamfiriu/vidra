@@ -5,8 +5,8 @@
     "build": "vidra build",
     "dev": "vidra dev",
     "dev:ui": "npm run dev --prefix ui",
-    "dev:host:macos": "dotnet build -t:Run -f net10.0-maccatalyst src/{{projectName}}.Host/{{projectName}}.Host.csproj",
-    "dev:host:windows": "dotnet build -t:Run -f net10.0-windows10.0.19041.0 src/{{projectName}}.Host/{{projectName}}.Host.csproj"
+    "dev:host:macos": "vidra run --target macos",
+    "dev:host:windows": "vidra run --target windows"
   },
   "devDependencies": {
     "create-vidra-app": "{{cliVersion}}"
