@@ -10,6 +10,11 @@ import {
 } from "../project.js";
 import { parseArgs } from "../utils.js";
 import { signMacAppBundleIfPossible } from "../signing.js";
+import {
+  ensureMauiWorkload,
+  looksLikeMissingWorkload,
+  printWorkloadHint,
+} from "../doctor.js";
 
 const VERSION = "0.1.0";
 const POLL_INTERVAL_MS = 500;
@@ -51,6 +56,13 @@ export const devCommand = async (argv: string[]): Promise<void> => {
   ensureTargetMatchesHostOs(target.name);
 
   const project = detectProject(process.cwd());
+
+  // Fail fast (before starting Vite) if the MAUI workload the host build needs
+  // isn't installed; offers to install it when the session is interactive.
+  if (!(await ensureMauiWorkload({ csprojPath: project.csprojPath }))) {
+    process.exit(1);
+  }
+
   const session = new DevSession(project, target, viteUrl, verbose);
   await session.run();
 };
@@ -144,8 +156,10 @@ class DevSession {
         },
       );
     } catch (error) {
+      const output = formatExecError(error);
       console.error(chalk.red("  MAUI build failed."));
-      console.error(chalk.dim(formatExecError(error)));
+      console.error(chalk.dim(output));
+      if (looksLikeMissingWorkload(output)) printWorkloadHint();
       process.exit(1);
     }
 

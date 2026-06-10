@@ -181,58 +181,87 @@ const App = () => {
       windowSupport.setFullscreen);
 
   return (
-    <div className="container">
-      <h1>{{appTitle}}</h1>
-      <p className="subtitle">React + .NET MAUI</p>
-
-      <div className="card">
-        <p className="counter">
-          Counter: <strong>{count}</strong>
-          <span className="counter-hint">Incremented by .NET every 10s</span>
-        </p>
-      </div>
-
-      <div className="card">
-        <p className="result">{info}</p>
-
-        <div className="actions">
-          <button onClick={handleGetAppInfo}>Get App Info</button>
-          <button onClick={handleReadClipboard}>Read Clipboard</button>
-          <button onClick={handleNotification}>Send Notification</button>
-          <button onClick={handleCapabilities}>List Capabilities</button>
-        </div>
-
-        {caps && (
-          <pre className="capabilities">{JSON.stringify(caps, null, 2)}</pre>
-        )}
-      </div>
-
-      <div className="card">
-        <p className="window-summary">{windowSummary}</p>
-
-        <div className="actions">
-          <button onClick={handleGetWindowInfo}>Get Window Info</button>
-          <button onClick={handleRenameWindow}>Rename Window</button>
-          <button onClick={handleResizeWindow}>Resize Window</button>
-          {windowSupport?.center && <button onClick={handleCenterWindow}>Center Window</button>}
-          {windowSupport?.maximize && (
-            <>
-              <button onClick={handleMaximizeWindow}>Maximize Window</button>
-              <button onClick={handleRestoreWindow}>Restore Window</button>
-            </>
-          )}
-          {windowSupport?.minimize && (
-            <button onClick={handleMinimizeWindow}>Minimize Window</button>
-          )}
-        </div>
-
-        {!showsAdvancedWindowActions && windowSupport && (
-          <p className="result">
-            This runtime currently supports title and size updates only. Unsupported window actions
-            are hidden automatically based on native support metadata.
+    <div className="app">
+      <main className="container">
+        <header className="hero">
+          <span className="badge">
+            <span className="dot" />
+            React + .NET MAUI
+          </span>
+          <h1 className="title">{{appTitle}}</h1>
+          <p className="tagline">
+            A cross-platform desktop app with a native bridge.
           </p>
-        )}
-      </div>
+        </header>
+
+        <section className="card counter-card">
+          <div className="counter-meta">
+            <span className="counter-label">Live counter</span>
+            <span className="counter-sub">Incremented by .NET every 10s</span>
+          </div>
+          <span className="counter-value">{count}</span>
+        </section>
+
+        <section className="card">
+          <h2 className="card-title">Native modules</h2>
+
+          <div className="actions">
+            <button onClick={handleGetAppInfo}>Get App Info</button>
+            <button onClick={handleReadClipboard}>Read Clipboard</button>
+            <button onClick={handleNotification}>Send Notification</button>
+            <button onClick={handleCapabilities}>List Capabilities</button>
+          </div>
+
+          <p className="result">{info}</p>
+
+          {caps && (
+            <pre className="capabilities">{JSON.stringify(caps, null, 2)}</pre>
+          )}
+        </section>
+
+        <section className="card">
+          <h2 className="card-title">Window controls</h2>
+
+          <div className="actions">
+            <button onClick={handleGetWindowInfo}>Get Window Info</button>
+            <button onClick={handleRenameWindow}>Rename Window</button>
+            <button onClick={handleResizeWindow}>Resize Window</button>
+            {windowSupport?.center && (
+              <button onClick={handleCenterWindow}>Center Window</button>
+            )}
+            {windowSupport?.maximize && (
+              <>
+                <button onClick={handleMaximizeWindow}>Maximize Window</button>
+                <button onClick={handleRestoreWindow}>Restore Window</button>
+              </>
+            )}
+            {windowSupport?.minimize && (
+              <button onClick={handleMinimizeWindow}>Minimize Window</button>
+            )}
+          </div>
+
+          <p className="window-summary">{windowSummary}</p>
+
+          {!showsAdvancedWindowActions && windowSupport && (
+            <p className="note">
+              This runtime currently supports title and size updates only.
+              Unsupported window actions are hidden automatically based on native
+              support metadata.
+            </p>
+          )}
+        </section>
+
+        <footer className="footer">
+          Built with{" "}
+          <a
+            href="https://github.com/rzamfiriu/vidra"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Vidra
+          </a>
+        </footer>
+      </main>
     </div>
   );
 };

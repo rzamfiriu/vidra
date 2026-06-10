@@ -6,9 +6,19 @@ A cross-platform application built with [Vidra](https://github.com/user/vidra) â
 
 ### Prerequisites
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download) with MAUI workload
+- [.NET 10 SDK](https://dotnet.microsoft.com/download)
+- The .NET MAUI workload: `dotnet workload install maui`
 - [Node.js](https://nodejs.org/) 18+
-- Windows development must be run from a Windows machine with the MAUI Windows workload installed
+- macOS targets require Xcode; Windows targets must be built on Windows
+
+Not sure if you're set up? Run:
+
+```bash
+vidra doctor
+```
+
+It checks your .NET SDK, the MAUI workload, and (on macOS) Xcode, and prints the
+exact command to fix anything that's missing.
 
 ### Development
 

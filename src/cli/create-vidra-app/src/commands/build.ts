@@ -12,6 +12,11 @@ import type { BuildTarget } from "../targets/types.js";
 import { macosTarget } from "../targets/macos.js";
 import { signMacAppBundleIfPossible } from "../signing.js";
 import { windowsTarget } from "../targets/windows.js";
+import {
+  ensureMauiWorkload,
+  looksLikeMissingWorkload,
+  printWorkloadHint,
+} from "../doctor.js";
 
 const VERSION = "0.1.0";
 
@@ -47,6 +52,11 @@ export const buildCommand = async (argv: string[]): Promise<void> => {
   console.log(`  ${chalk.dim("Project:")}  ${chalk.cyan(project.projectName)}`);
   console.log(`  ${chalk.dim("Target:")}   ${chalk.cyan(target.name)} (${target.framework})`);
   console.log();
+
+  // Verify the MAUI workload before the (slow) UI build so we fail fast.
+  if (!(await ensureMauiWorkload({ csprojPath: project.csprojPath }))) {
+    process.exit(1);
+  }
 
   // Step 1: Build UI
   stepBuildUi(project, verbose);
@@ -185,8 +195,10 @@ const stepDotnetPublish = (
     );
   } catch (e: unknown) {
     const err = e as { stderr?: Buffer; message: string };
+    const output = err.stderr?.toString() || err.message;
     console.error(chalk.red("  dotnet publish failed."));
-    console.error(chalk.dim(err.stderr?.toString() || err.message));
+    console.error(chalk.dim(output));
+    if (looksLikeMissingWorkload(output)) printWorkloadHint();
     process.exit(1);
   }
 

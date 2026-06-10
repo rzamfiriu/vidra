@@ -1,8 +1,9 @@
 import chalk from "chalk";
 import { buildCommand } from "./commands/build.js";
 import { devCommand } from "./commands/dev.js";
+import { runDoctor } from "./doctor.js";
 
-const VERSION = "0.1.2";
+const VERSION = "0.1.3";
 
 const printHelp = (): void => {
   console.log(`
@@ -14,6 +15,7 @@ const printHelp = (): void => {
   ${chalk.dim("Commands:")}
     dev     Start the development environment
     build   Build and package the application for distribution
+    doctor  Check that your environment is set up to build Vidra apps
     help    Show this help message
 
   ${chalk.dim("Examples:")}
@@ -22,6 +24,7 @@ const printHelp = (): void => {
     vidra build                 ${chalk.dim("# auto-detect platform")}
     vidra build --target macos  ${chalk.dim("# macOS DMG")}
     vidra build --verbose       ${chalk.dim("# show full build output")}
+    vidra doctor                ${chalk.dim("# verify .NET SDK + MAUI workload")}
 `);
 };
 
@@ -35,6 +38,9 @@ const main = async (): Promise<void> => {
       break;
     case "build":
       await buildCommand(args.slice(1));
+      break;
+    case "doctor":
+      process.exit(await runDoctor());
       break;
     case "help":
     case "--help":

@@ -14,6 +14,7 @@ import {
 } from "./utils.js";
 import { exec, tryExec } from "./exec.js";
 import { scaffoldDir, type Replacements } from "./scaffold.js";
+import { ensureMauiWorkload } from "./doctor.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI_ROOT = path.resolve(__dirname, "..");
@@ -192,11 +193,29 @@ const main = async (): Promise<void> => {
         " to retry.\n",
     );
   }
+
+  // Surface a missing MAUI workload now, while we can guide the fix, rather
+  // than letting `npm run dev` fail later with a raw MSBuild error.
+  const hostCsproj = path.join(
+    root,
+    "src",
+    `${projectName}.Host`,
+    `${projectName}.Host.csproj`,
+  );
+  const prereqsReady = await ensureMauiWorkload({ csprojPath: hostCsproj });
+
   console.log(chalk.bold("  Next steps:\n"));
   console.log(`    cd ${projectDir}`);
   console.log(
     `    npm run dev  ${chalk.dim("# starts Vite + MAUI host together")}`,
   );
+  if (!prereqsReady) {
+    console.log(
+      `    ${chalk.dim("# tip: run")} ${chalk.cyan(
+        "vidra doctor",
+      )} ${chalk.dim("to verify your setup first")}`,
+    );
+  }
   console.log();
 };
 

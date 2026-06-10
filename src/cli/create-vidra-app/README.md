@@ -26,13 +26,19 @@ This package also installs the `vidra` CLI used by scaffolded apps:
 vidra dev                   # start Vite + native host
 vidra dev --target windows  # run the Windows host
 vidra build --target macos  # build + package a macOS .dmg
+vidra doctor                # check your .NET / MAUI / Xcode setup
 ```
 
 ## Prerequisites
 
-- .NET 10 SDK with the MAUI workload
+- .NET 10 SDK
+- The .NET MAUI workload: `dotnet workload install maui`
 - Node.js 18+
-- Windows targets must be built on Windows; macOS targets on macOS
+- macOS targets require Xcode; Windows targets must be built on Windows
+
+If the MAUI workload is missing, `create-vidra-app` will detect it after
+scaffolding and offer to install it for you. You can re-check at any time with
+`vidra doctor`.
 
 ## License
 
