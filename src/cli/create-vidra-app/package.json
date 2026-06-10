@@ -1,6 +1,6 @@
 {
   "name": "create-vidra-app",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Scaffold a new Vidra application (React + .NET MAUI)",
   "type": "module",
   "bin": {
