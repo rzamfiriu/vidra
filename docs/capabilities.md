@@ -1,5 +1,17 @@
 # Capabilities
 
+Every method below is exposed through the JS SDK as a **generated, typed proxy** — the
+payload and return columns map directly to the TypeScript argument and result types
+emitted by `vidra-codegen` from the C# modules (see
+[architecture.md](./architecture.md#type-safety--codegen)):
+
+```typescript
+import { filesystem } from "@vidra-dev/sdk";
+
+// Fully typed: `path` is required, `content` is inferred as `string`.
+const { content } = await filesystem.readText({ path: "/tmp/notes.txt" });
+```
+
 ## Built-in Modules
 
 ### `filesystem`

@@ -84,17 +84,62 @@ and notarization.
 
 ## JS SDK Usage
 
-```typescript
-import { vidra } from '@vidra-dev/sdk';
+The SDK ships **generated, fully-typed proxies** for every native module, so calls are
+checked at compile time and your editor autocompletes both arguments and results:
 
-// Call a native module
-const { content } = await vidra.invoke('filesystem', 'readText', { path: '/tmp/notes.txt' });
+```typescript
+import { filesystem, appWindow, vidra } from '@vidra-dev/sdk';
+
+// `path` is required and typo-checked; `content` is inferred as `string`.
+const { content } = await filesystem.readText({ path: '/tmp/notes.txt' });
+
+// `state` is a typed union ('restored' | 'maximized' | 'minimized' | 'fullscreen'),
+// not a bare string.
+const { state } = await appWindow.getCurrent();
 
 // Listen for native events
 vidra.on('app.resume', () => console.log('App resumed'));
 
-// Discover available modules
+// Discover available modules at runtime
 const caps = await vidra.capabilities();
+```
+
+### Type safety via codegen
+
+C# is the single source of truth for the bridge contract. Native modules are plain C#
+classes annotated with `[BridgeModule]` / `[BridgeMethod]`, and their argument/result
+records define the shape of every call:
+
+```csharp
+public record ReadTextArgs(string Path);
+public record ReadTextResult(string Content);
+
+[BridgeModule("filesystem")]
+public sealed class FileSystemModule : BridgeModuleBase
+{
+    [BridgeMethod("readText")]
+    public async Task<ReadTextResult> ReadTextAsync(ReadTextArgs args, CancellationToken ct)
+    {
+        var content = await File.ReadAllTextAsync(args.Path, ct);
+        return new ReadTextResult(content);
+    }
+}
+```
+
+On build, `vidra-codegen` scans the compiled assemblies and emits matching TypeScript
+proxies and interfaces (`ReadTextArgs`, `ReadTextResult`, …). Because the TS types are
+generated from the C# definitions, the JS and native sides can never silently drift.
+See [docs/architecture.md](docs/architecture.md#type-safety--codegen) for the full pipeline.
+
+Need a module the proxies don't cover yet? The lower-level, stringly-typed escape hatch
+is always available:
+
+```typescript
+const { content } = await vidra.invoke<{ content: string }>(
+  'filesystem',
+  'readText',
+  { path: '/tmp/notes.txt' },
+);
 ```
 
 ## Targets
