@@ -4,6 +4,34 @@
 
 Vidra uses a single `WebView` control as the host for all platforms, in both development and production. The framework owns the entire bridge between JavaScript and C#.
 
+```mermaid
+flowchart TB
+    subgraph WEB["WebView (JS)"]
+        APP["App code / React"]
+        CLIENT["VidraClient"]
+        TRANSPORT["Transport<br/>NativeMessage · CustomScheme · BrowserFallback"]
+        APP --> CLIENT --> TRANSPORT
+    end
+
+    subgraph NET[".NET MAUI host (C#)"]
+        HOSTWV["WebView host · VidraPage"]
+        DISP["BridgeDispatcher"]
+        MODS["Modules<br/>filesystem · dialogs · clipboard<br/>notifications · app · appWindow"]
+        HOSTWV --> DISP --> MODS
+    end
+
+    OS["Native OS APIs"]
+
+    TRANSPORT <-->|"JSON bridge"| HOSTWV
+    MODS --> OS
+```
+
+The transport is auto-detected: the native message channel is preferred, with the
+`vidra://bridge` custom scheme as a fallback and a browser stub for UI-only development.
+The bridge is bidirectional — see the message round-trip in
+[interop-protocol.md](./interop-protocol.md) for the wire format, and
+[Type Safety & Codegen](#type-safety--codegen) for how the typed SDK proxies are generated.
+
 ## Host Model
 
 - **Development**: the WebView loads `http://localhost:5173` (or a configurable `VIDRA_DEV_URL`), allowing Vite HMR and standard browser dev tools.

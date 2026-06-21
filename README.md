@@ -6,21 +6,30 @@ Build desktop and mobile apps with a web-based UI and native C# capabilities, sh
 
 ## Architecture
 
-```
-React / Any JS framework
-        │
-        │  WebView
-        │
-   JS SDK  (@vidra-dev/sdk)
-        │
-  Interop bridge (JS ↔ C#)
-        │
-     .NET MAUI
-        │
-  Native APIs / filesystem / OS
+```mermaid
+flowchart TB
+    subgraph WEB["WebView · WKWebView / WebView2"]
+        UI["React / any JS framework"]
+        SDK["@vidra-dev/sdk<br/>typed proxies · invoke() · on() · capabilities()"]
+        UI --> SDK
+    end
+
+    subgraph HOST[".NET MAUI host"]
+        DISP["BridgeDispatcher<br/>routes by module name"]
+        MODS["Native modules<br/>filesystem · dialogs · clipboard<br/>notifications · app · appWindow"]
+        DISP --> MODS
+    end
+
+    OS["Native OS APIs · filesystem · windowing · notifications"]
+
+    SDK <-->|"JSON bridge<br/>requests · responses · events"| DISP
+    MODS --> OS
 ```
 
-The UI stack is pure web. Native capability lives in .NET.
+The UI stack is pure web. Native capability lives in .NET. Calls flow JS → C# as JSON
+requests, while responses, native events, and reverse-RPC flow back over the same bridge.
+The C# modules' argument/result types are also the single source of truth for the SDK's
+generated TypeScript proxies — see [Type safety via codegen](#type-safety-via-codegen).
 
 ## Repository Layout
 

@@ -1,5 +1,26 @@
 # Interop Protocol
 
+## Message Round-Trip
+
+A typical typed call flows through the SDK, across the transport, into the dispatcher,
+and back. Events and reverse RPC reuse the same channel in the opposite direction.
+
+```mermaid
+sequenceDiagram
+    participant App as App / React
+    participant SDK as vidra SDK
+    participant Host as MAUI host
+    participant Mod as Module
+
+    App->>SDK: filesystem.readText({ path })
+    SDK->>Host: request (postMessage / vidra://bridge)
+    Host->>Mod: dispatch by module name
+    Mod-->>Host: result
+    Host-->>SDK: __vidra_callback(response)
+    SDK-->>App: typed result
+    Note over SDK,Host: events via __vidra_onevent · reverse RPC via __vidra_invoke
+```
+
 ## Transport
 
 ### JS → C#
