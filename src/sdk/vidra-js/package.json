@@ -16,12 +16,21 @@
   },
   "keywords": [
     "vidra",
+    "dotnet",
+    "csharp",
+    "dotnet-maui",
     "maui",
     "webview",
     "bridge",
-    "dotnet",
     "desktop",
-    "react"
+    "cross-platform",
+    "electron-alternative",
+    "tauri-alternative",
+    "react",
+    "vue",
+    "svelte",
+    "typescript",
+    "type-safe"
   ],
   "repository": {
     "type": "git",

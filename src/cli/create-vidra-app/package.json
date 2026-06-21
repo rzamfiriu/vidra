@@ -21,9 +21,18 @@
   },
   "keywords": [
     "vidra",
+    "create-vidra-app",
+    "dotnet",
+    "csharp",
+    "dotnet-maui",
     "maui",
     "react",
+    "vue",
+    "svelte",
     "cross-platform",
+    "desktop",
+    "electron-alternative",
+    "tauri-alternative",
     "scaffold",
     "cli"
   ],
