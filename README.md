@@ -17,8 +17,8 @@ The type-safe, lightweight alternative to Electron (Node), Tauri (Rust), and XAM
 ---
 
 Vidra lets .NET teams build cross-platform desktop applications with any modern web
-framework on a native **C#/.NET** core. The UI is pure web — **React, Vue, Svelte, Solid**,
-your call — the native layer is C#, and a **type-safe bridge generated from your C# code**
+framework on a native **C#/.NET** core. The UI is pure web ( **React, Vue, Svelte, Solid**,
+your call ) the native layer is C#, and a **type-safe bridge generated from your C# code**
 keeps the two sides permanently in sync. Unlike Electron you never touch Node; unlike
 Tauri you never touch Rust; unlike MAUI, Avalonia, or WPF you never touch XAML.
 
@@ -27,7 +27,7 @@ Tauri you never touch Rust; unlike MAUI, Avalonia, or WPF you never touch XAML.
 ## Why Vidra
 
 - **Stay in C#/.NET.** Your native layer, domain logic, and NuGet libraries are all C#. No second backend language for the team to learn.
-- **Bring any web framework.** The UI is a standard web app rendered in a native WebView — React, Vue, Svelte, Solid, or plain HTML. No XAML, no Razor lock-in.
+- **Bring any web framework.** The UI is a standard web app rendered in a native WebView: React, Vue, Svelte, Solid, or plain HTML. No XAML, no Razor lock-in.
 - **Type-safe by codegen.** C# modules are the single source of truth; `vidra-codegen` emits matching TypeScript proxies on every build, so JS and native can't silently drift.
 - **Lightweight.** Uses the OS-native WebView (WKWebView / WebView2) instead of bundling Chromium, keeping apps small and memory-light.
 - **One bridge, both ways.** Typed `invoke()`, native event push, and reverse-RPC all flow over a single JSON bridge.
@@ -98,7 +98,7 @@ public sealed class FileSystemModule : BridgeModuleBase
 ```
 
 On build, `vidra-codegen` scans the compiled assemblies and emits matching, fully-typed
-TypeScript proxies — so your editor autocompletes both arguments and results:
+TypeScript proxies so your editor autocompletes both arguments and results:
 
 ```ts
 import { filesystem } from "@vidra-dev/sdk";
@@ -132,8 +132,8 @@ Full pipeline and C# → TS type mapping: **[Type safety & codegen →](docs/arc
 | Windows | Supported |
 | macOS | Supported |
 
-Mobile (iOS / Android) is on the roadmap — the .NET MAUI foundation makes it a natural
-next target. Linux desktop isn't a target (MAUI has no Linux desktop support).
+Mobile (iOS / Android) is on the roadmap as the .NET MAUI foundation makes it a natural
+next target.
 
 ## License
 
