@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process";
-import chalk from "chalk";
+import { dim, row } from "./theme.js";
 
 const toText = (value: Buffer | string | undefined): string => {
   if (value == null) return "";
@@ -50,8 +50,8 @@ export const exec = (cmd: string, cwd: string): void => {
   try {
     execSync(cmd, { cwd, stdio: "pipe" });
   } catch (e: unknown) {
-    console.error(chalk.red(`  Command failed: ${cmd}`));
-    console.error(chalk.dim(formatProcessError(e)));
+    console.error(row({ glyph: "error", detail: dim(`command failed: ${cmd}`) }));
+    console.error(dim(formatProcessError(e)));
     process.exit(1);
   }
 };

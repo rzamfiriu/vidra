@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import prompts from "prompts";
-import chalk from "chalk";
+import { dim, fixLine, footer, lime, row, value } from "./theme.js";
+import type { GlyphName } from "./theme.js";
 
 const DOTNET = process.platform === "win32" ? "dotnet.exe" : "dotnet";
 const MAUI_DOCS =
@@ -195,18 +196,25 @@ export const collectRequirements = (
   return reqs;
 };
 
+const STATUS_GLYPH: Record<RequirementStatus, GlyphName> = {
+  ok: "done",
+  missing: "error",
+  unknown: "manual",
+};
+
 export const printRequirements = (reqs: Requirement[]): void => {
+  const labelWidth = Math.max(0, ...reqs.map((r) => r.name.length)) + 2;
   for (const r of reqs) {
-    const icon =
-      r.status === "ok"
-        ? chalk.green("\u2713")
-        : r.status === "missing"
-          ? chalk.red("\u2717")
-          : chalk.yellow("?");
-    const detail = r.detail ? ` ${chalk.dim(`(${r.detail})`)}` : "";
-    console.log(`  ${icon} ${r.name}${detail}`);
+    console.log(
+      row({
+        glyph: STATUS_GLYPH[r.status],
+        label: r.name,
+        labelWidth,
+        detail: r.detail ? dim(r.detail) : undefined,
+      }),
+    );
     if (r.status === "missing" && r.fix) {
-      console.log(`      ${chalk.dim("fix:")} ${chalk.cyan(r.fix)}`);
+      console.log(fixLine(r.fix));
     }
   }
 };
@@ -214,7 +222,9 @@ export const printRequirements = (reqs: Requirement[]): void => {
 /** Implements the `vidra doctor` command. Returns a process exit code. */
 export const runDoctor = async (): Promise<number> => {
   console.log();
-  console.log(`  ${chalk.bold.cyan("vidra doctor")}`);
+  console.log(`  ${lime("vidra")} ${value("doctor")}`);
+  console.log();
+  console.log(footer(dim("checking your environment\u2026")));
   console.log();
 
   const reqs = collectRequirements();
@@ -224,18 +234,25 @@ export const runDoctor = async (): Promise<number> => {
   const missing = reqs.filter((r) => r.status === "missing");
   if (missing.length === 0) {
     console.log(
-      `  ${chalk.green("All checks passed.")} You're ready to run ${chalk.cyan(
-        "vidra dev",
-      )}.`,
+      footer(
+        `${dim("all checks passed \u2014 you're ready to run")} ${lime(
+          "vidra dev",
+        )}${dim(".")}`,
+      ),
     );
     console.log();
     return 0;
   }
 
+  const n = missing.length;
   console.log(
-    `  ${chalk.yellow(
-      `${missing.length} issue(s) found.`,
-    )} Apply the fixes above, then re-run ${chalk.cyan("vidra doctor")}.`,
+    footer(
+      `${dim(
+        `${n} issue${n === 1 ? "" : "s"} found. apply the ${
+          n === 1 ? "fix" : "fixes"
+        } above, then re-run`,
+      )} ${lime("vidra doctor")}${dim(".")}`,
+    ),
   );
   console.log();
   return 1;
@@ -252,11 +269,16 @@ const installWorkload = (csprojPath?: string): boolean => {
     : ["workload", "install", "maui"];
 
   console.log();
-  console.log(`  ${chalk.dim(`Running: ${DOTNET} ${args.join(" ")}`)}`);
   console.log(
-    `  ${chalk.dim(
-      "This can download several hundred MB and take a few minutes.",
-    )}`,
+    row({
+      glyph: "active",
+      detail: `${dim("running")} ${value(`${DOTNET} ${args.join(" ")}`)}`,
+    }),
+  );
+  console.log(
+    footer(
+      dim("this can download several hundred MB and take a few minutes."),
+    ),
   );
   console.log();
 
@@ -265,13 +287,15 @@ const installWorkload = (csprojPath?: string): boolean => {
     return true;
   } catch {
     console.error();
-    console.error(`  ${chalk.red("Workload install failed.")}`);
+    console.error(row({ glyph: "error", label: "workload install failed" }));
     console.error(
-      `  ${chalk.dim(
-        "If this is a permissions error, your SDK is in a system location and needs elevation:",
-      )}`,
+      footer(
+        dim(
+          "if this is a permissions error, your SDK is in a system location and needs elevation:",
+        ),
+      ),
     );
-    console.error(`      ${chalk.cyan("sudo dotnet workload install maui")}`);
+    console.error(fixLine("sudo dotnet workload install maui"));
     console.error();
     return false;
   }
@@ -290,9 +314,15 @@ export const ensureMauiWorkload = async (opts: {
   const dotnet = checkDotnetSdk();
   if (dotnet.status === "missing") {
     console.log();
-    console.log(`  ${chalk.yellow("!")} ${dotnet.name} \u2014 ${dotnet.detail}`);
+    console.log(
+      row({
+        glyph: "error",
+        label: dotnet.name,
+        detail: dotnet.detail ? dim(dotnet.detail) : undefined,
+      }),
+    );
     if (dotnet.fix) {
-      console.log(`      ${chalk.dim("fix:")} ${chalk.cyan(dotnet.fix)}`);
+      console.log(fixLine(dotnet.fix));
     }
     return false;
   }
@@ -303,7 +333,11 @@ export const ensureMauiWorkload = async (opts: {
 
   console.log();
   console.log(
-    `  ${chalk.yellow("!")} The .NET MAUI workload is required but not installed.`,
+    row({
+      glyph: "error",
+      label: ".NET MAUI workload",
+      detail: dim("required but not installed"),
+    }),
   );
 
   const interactive = opts.interactive ?? isInteractive();
@@ -322,17 +356,21 @@ export const ensureMauiWorkload = async (opts: {
     }
     if (install) {
       if (installWorkload(opts.csprojPath) && isMauiWorkloadInstalled()) {
-        console.log(`  ${chalk.green("\u2713")} MAUI workload installed.`);
+        console.log(
+          row({
+            glyph: "done",
+            label: ".NET MAUI workload",
+            detail: dim("installed"),
+          }),
+        );
         return true;
       }
       return false;
     }
   }
 
-  console.log(
-    `      ${chalk.dim("run:")} ${chalk.cyan("dotnet workload install maui")}`,
-  );
-  console.log(`      ${chalk.dim("docs:")} ${chalk.cyan(MAUI_DOCS)}`);
+  console.log(fixLine("dotnet workload install maui", "run:"));
+  console.log(fixLine(MAUI_DOCS, "docs:"));
   return false;
 };
 
@@ -340,14 +378,10 @@ export const ensureMauiWorkload = async (opts: {
 export const printWorkloadHint = (): void => {
   console.error();
   console.error(
-    `  ${chalk.yellow("This looks like a missing .NET MAUI workload.")}`,
+    row({ glyph: "manual", label: "this looks like a missing .NET MAUI workload." }),
   );
-  console.error(
-    `      ${chalk.dim("fix: ")} ${chalk.cyan("dotnet workload install maui")}`,
-  );
-  console.error(
-    `      ${chalk.dim("check:")} ${chalk.cyan("vidra doctor")}`,
-  );
+  console.error(fixLine("dotnet workload install maui"));
+  console.error(fixLine("vidra doctor", "check:"));
   console.error();
 };
 
@@ -355,19 +389,19 @@ export const printWorkloadHint = (): void => {
 export const printXcodeHint = (): void => {
   console.error();
   console.error(
-    `  ${chalk.yellow(
-      "Mac Catalyst builds need the full Xcode app, not just the Command Line Tools.",
-    )}`,
+    row({
+      glyph: "manual",
+      label:
+        "Mac Catalyst needs the full Xcode app, not just the Command Line Tools.",
+    }),
   );
-  console.error(`      ${chalk.dim("1.")} Install Xcode from the App Store`);
+  console.error(`      ${dim("1.")} ${value("install Xcode from the App Store")}`);
   console.error(
-    `      ${chalk.dim("2.")} ${chalk.cyan(
+    `      ${dim("2.")} ${lime(
       "sudo xcode-select -s /Applications/Xcode.app/Contents/Developer",
     )}`,
   );
-  console.error(
-    `      ${chalk.dim("3.")} ${chalk.cyan("sudo xcodebuild -runFirstLaunch")}`,
-  );
-  console.error(`      ${chalk.dim("check:")} ${chalk.cyan("vidra doctor")}`);
+  console.error(`      ${dim("3.")} ${lime("sudo xcodebuild -runFirstLaunch")}`);
+  console.error(fixLine("vidra doctor", "check:"));
   console.error();
 };

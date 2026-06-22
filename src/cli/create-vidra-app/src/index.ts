@@ -1,5 +1,4 @@
 import prompts from "prompts";
-import chalk from "chalk";
 import fs from "fs-extra";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -15,6 +14,11 @@ import {
 import { exec, tryExec } from "./exec.js";
 import { scaffoldDir, type Replacements } from "./scaffold.js";
 import { ensureMauiWorkload } from "./doctor.js";
+import { dim, footer, kv, lime, row, value, wordmark } from "./theme.js";
+
+/** A dim "label   body" note line (body may contain its own colors). */
+const note = (label: string, body: string): string =>
+  `  ${dim(label.padEnd(7))} ${body}`;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CLI_ROOT = path.resolve(__dirname, "..");
@@ -28,8 +32,9 @@ const SDK_VERSION = "0.1.0";
 
 const main = async (): Promise<void> => {
   console.log();
-  console.log(chalk.bold("  create-vidra-app"));
-  console.log(chalk.dim("  Scaffold a new Vidra application\n"));
+  console.log(`  create-${lime("vidra")}-app`);
+  console.log(footer(dim("scaffold a new vidra application")));
+  console.log();
 
   const args = parseArgs(process.argv);
   let projectDir = args._[0] as string | undefined;
@@ -75,18 +80,21 @@ const main = async (): Promise<void> => {
   const root = path.resolve(projectDir);
 
   if (fs.existsSync(root) && fs.readdirSync(root).length > 0) {
+    console.error();
     console.error(
-      chalk.red(
-        `\n  Directory "${projectDir}" already exists and is not empty.\n`,
-      ),
+      row({
+        glyph: "error",
+        detail: dim(`directory "${projectDir}" already exists and is not empty`),
+      }),
     );
+    console.error();
     process.exit(1);
   }
 
   console.log();
-  console.log(`  ${chalk.dim("Project:")}    ${chalk.cyan(projectName)}`);
-  console.log(`  ${chalk.dim("Directory:")}  ${chalk.cyan(root)}`);
-  console.log(`  ${chalk.dim("App ID:")}     ${chalk.cyan(appId)}`);
+  console.log(kv("project", projectName));
+  console.log(kv("directory", root));
+  console.log(kv("app id", appId));
   console.log();
 
   // Path values get textually substituted into JSON (ui/package.json) and
@@ -131,7 +139,7 @@ const main = async (): Promise<void> => {
   const templateDir = path.join(TEMPLATES_DIR, "react-vite");
   await scaffoldDir(templateDir, root, replacements);
 
-  console.log(chalk.dim("  Creating solution..."));
+  console.log(row({ glyph: "active", detail: dim("creating solution\u2026") }));
   exec(`dotnet new sln -n ${projectName} --force`, root);
 
   const slnFile = fs.existsSync(path.join(root, `${projectName}.slnx`))
@@ -142,7 +150,7 @@ const main = async (): Promise<void> => {
     root,
   );
 
-  console.log(chalk.dim("  Installing npm dependencies..."));
+  console.log(row({ glyph: "active", detail: dim("installing dependencies\u2026") }));
   // The root install provides the `vidra` CLI binary (via the create-vidra-app
   // devDependency) that the `dev`/`build` scripts call; the ui install provides
   // React/Vite/@vidra-dev/sdk. They are separate package roots, not workspaces.
@@ -152,46 +160,39 @@ const main = async (): Promise<void> => {
   const npmOk = rootNpmOk && uiNpmOk;
 
   console.log();
-  console.log(chalk.green("  Done! ") + "Your Vidra app is ready.\n");
+  console.log(
+    row({
+      glyph: "done",
+      detail: `${dim("your")} ${wordmark()} ${dim("app is ready")}`,
+    }),
+  );
+  console.log();
 
   if (localFeedExists) {
-    console.log(
-      chalk.dim("  NuGet:") +
-        " local feed \u2192 " +
-        chalk.cyan(LOCAL_FEED_DIR),
-    );
+    console.log(note("nuget", `${dim("local feed \u2192")} ${value(LOCAL_FEED_DIR)}`));
   } else if (isMonorepo) {
     console.log(
-      chalk.yellow("  Note: ") +
-        "Local NuGet feed not found. Run " +
-        chalk.cyan("./pack-local.sh") +
-        " in the Vidra repo, then update NuGet.Config.",
+      row({
+        glyph: "manual",
+        detail: `${dim("local NuGet feed not found. run")} ${lime("./pack-local.sh")} ${dim("in the vidra repo, then update NuGet.Config.")}`,
+      }),
     );
   }
 
   if (isMonorepo) {
-    console.log(
-      chalk.dim("  npm:  ") +
-        " @vidra-dev/sdk \u2192 " +
-        chalk.cyan(LOCAL_SDK_DIR),
-    );
-    console.log(
-      chalk.dim("  npm:  ") +
-        " create-vidra-app \u2192 " +
-        chalk.cyan(LOCAL_CLI_DIR),
-    );
+    console.log(note("npm", `${dim("@vidra-dev/sdk \u2192")} ${value(LOCAL_SDK_DIR)}`));
+    console.log(note("npm", `${dim("create-vidra-app \u2192")} ${value(LOCAL_CLI_DIR)}`));
   }
   console.log();
 
   if (!npmOk) {
     console.log(
-      chalk.yellow("  Note: ") +
-        "`npm install` had errors. Re-run " +
-        chalk.cyan("npm install") +
-        " in the project root and in " +
-        chalk.cyan("ui/") +
-        " to retry.\n",
+      row({
+        glyph: "manual",
+        detail: `${dim("npm install had errors. re-run")} ${lime("npm install")} ${dim("in the project root and in")} ${value("ui/")} ${dim("to retry.")}`,
+      }),
     );
+    console.log();
   }
 
   // Surface a missing MAUI workload now, while we can guide the fix, rather
@@ -204,22 +205,20 @@ const main = async (): Promise<void> => {
   );
   const prereqsReady = await ensureMauiWorkload({ csprojPath: hostCsproj });
 
-  console.log(chalk.bold("  Next steps:\n"));
-  console.log(`    cd ${projectDir}`);
+  console.log(footer(dim("next steps")));
+  console.log(`    ${value(`cd ${projectDir}`)}`);
   console.log(
-    `    npm run dev  ${chalk.dim("# starts Vite + MAUI host together")}`,
+    `    ${value("npm run dev")}  ${dim("# starts vite + the MAUI host together")}`,
   );
   if (!prereqsReady) {
     console.log(
-      `    ${chalk.dim("# tip: run")} ${chalk.cyan(
-        "vidra doctor",
-      )} ${chalk.dim("to verify your setup first")}`,
+      `    ${dim("tip: run")} ${lime("vidra doctor")} ${dim("to verify your setup first")}`,
     );
   }
   console.log();
 };
 
 main().catch((e: Error) => {
-  console.error(chalk.red(e.message));
+  console.error(row({ glyph: "error", detail: dim(e.message) }));
   process.exit(1);
 });

@@ -1,32 +1,32 @@
-import chalk from "chalk";
 import { buildCommand } from "./commands/build.js";
 import { devCommand, runCommand } from "./commands/dev.js";
 import { runDoctor } from "./doctor.js";
-
-const VERSION = "0.1.5";
+import { CLI_VERSION, dim, lime, row, value, wordmark } from "./theme.js";
 
 const printHelp = (): void => {
+  const cmd = (name: string, desc: string): string =>
+    `    ${value(name.padEnd(10))} ${dim(desc)}`;
+  const ex = (args: string, comment: string): string =>
+    `    ${lime("vidra")} ${value(args.padEnd(22))} ${dim(`# ${comment}`)}`;
+
   console.log(`
-  ${chalk.bold("vidra")} ${chalk.dim(`v${VERSION}`)}
+  ${wordmark()} ${dim(`v${CLI_VERSION}`)}
 
-  ${chalk.dim("Usage:")}
-    vidra <command> [options]
+  ${dim("usage")}
+    ${lime("vidra")} ${dim("<command> [options]")}
 
-  ${chalk.dim("Commands:")}
-    dev     Start the development environment (Vite + native host)
-    run     Build and launch the native host only (no Vite dev server)
-    build   Build and package the application for distribution
-    doctor  Check that your environment is set up to build Vidra apps
-    help    Show this help message
+  ${dim("commands")}
+${cmd("dev", "start vite + the native host (hot reload)")}
+${cmd("run", "launch the native host only")}
+${cmd("build", "build & package for distribution")}
+${cmd("doctor", "check your environment")}
+${cmd("help", "show this message")}
 
-  ${chalk.dim("Examples:")}
-    vidra dev                   ${chalk.dim("# start Vite + native host")}
-    vidra dev --target windows  ${chalk.dim("# run the Windows host")}
-    vidra run                   ${chalk.dim("# launch the host (UI served separately)")}
-    vidra build                 ${chalk.dim("# auto-detect platform")}
-    vidra build --target macos  ${chalk.dim("# macOS DMG")}
-    vidra build --verbose       ${chalk.dim("# show full build output")}
-    vidra doctor                ${chalk.dim("# verify .NET SDK + MAUI workload")}
+  ${dim("examples")}
+${ex("dev --target windows", "run the windows host")}
+${ex("build --plan", "preview the build, run nothing")}
+${ex("build --target macos", "build & package a macOS DMG")}
+${ex("doctor", "verify .NET SDK + MAUI workload")}
 `);
 };
 
@@ -55,16 +55,16 @@ const main = async (): Promise<void> => {
       break;
     case "--version":
     case "-v":
-      console.log(VERSION);
+      console.log(CLI_VERSION);
       break;
     default:
-      console.error(chalk.red(`  Unknown command: ${command}\n`));
+      console.error(row({ glyph: "error", detail: dim(`unknown command: ${command}`) }));
       printHelp();
       process.exit(1);
   }
 };
 
 main().catch((e: Error) => {
-  console.error(chalk.red(e.message));
+  console.error(row({ glyph: "error", detail: dim(e.message) }));
   process.exit(1);
 });

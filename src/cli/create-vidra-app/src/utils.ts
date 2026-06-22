@@ -38,7 +38,21 @@ export const parseArgs = (argv: string[]): ParsedArgs => {
     const arg = argv[i];
     if (arg.startsWith("--")) {
       const [key, val] = arg.slice(2).split("=");
-      args[key] = val ?? argv[++i] ?? true;
+      if (val !== undefined) {
+        args[key] = val;
+        continue;
+      }
+      // A bare flag only consumes the next token as its value when that token
+      // isn't itself a flag — so `--plan --target macos` reads `plan` as a
+      // boolean and `target` as `macos`, rather than `plan` swallowing
+      // `--target`.
+      const next = argv[i + 1];
+      if (next !== undefined && !next.startsWith("--")) {
+        args[key] = next;
+        i++;
+      } else {
+        args[key] = true;
+      }
     } else {
       (args._ as string[]).push(arg);
     }

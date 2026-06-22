@@ -2,7 +2,6 @@ import path from "node:path";
 import fs from "fs-extra";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { request } from "node:http";
-import chalk from "chalk";
 import {
   detectPlatform,
   detectProject,
@@ -18,8 +17,19 @@ import {
   printWorkloadHint,
   printXcodeHint,
 } from "../doctor.js";
+import {
+  dim,
+  footer,
+  header,
+  kv,
+  lime,
+  row,
+  streamPrefix,
+  taggedRow,
+  value,
+  type TagName,
+} from "../theme.js";
 
-const VERSION = "0.1.0";
 const POLL_INTERVAL_MS = 500;
 const POLL_TIMEOUT_MS = 30_000;
 const NPM_COMMAND = process.platform === "win32" ? "npm.cmd" : "npm";
@@ -63,9 +73,10 @@ const startSession = async (
   if (!target) {
     const supported = Object.keys(TARGETS).join(", ");
     console.error(
-      chalk.red(
-        `  Unsupported target: ${targetName}. Supported: ${supported}`,
-      ),
+      row({
+        glyph: "error",
+        detail: dim(`unsupported target: ${targetName} — supported: ${supported}`),
+      }),
     );
     process.exit(1);
   }
@@ -104,14 +115,9 @@ class DevSession {
     this.installSignalHandlers();
 
     console.log();
-    console.log(
-      `  ${chalk.bold.cyan(this.vite ? "vidra dev" : "vidra run")} ${chalk.dim(`v${VERSION}`)}`,
-    );
-    console.log();
-    console.log(`  ${chalk.dim("Project:")}  ${chalk.cyan(this.project.projectName)}`);
-    console.log(
-      `  ${chalk.dim("Target:")}   ${chalk.cyan(this.target.name)} (${this.target.framework})`,
-    );
+    console.log(header(this.vite ? "dev" : "run", this.target.name));
+    console.log(kv("project", this.project.projectName));
+    console.log(kv("target", this.target.framework));
     console.log();
 
     let vite: ChildProcess | undefined;
@@ -121,17 +127,21 @@ class DevSession {
       try {
         await waitForServer(this.viteUrl, POLL_TIMEOUT_MS);
       } catch (error) {
-        console.error(chalk.red(`  ${(error as Error).message}`));
+        console.error(row({ glyph: "error", detail: dim((error as Error).message) }));
         this.shutdown(1);
       }
 
-      console.log(`  ${chalk.dim("Vite:")}     ${chalk.cyan(this.viteUrl)}`);
-      console.log();
+      console.log(
+        taggedRow("active", "ui", `${dim("vite ready \u2014")} ${value(this.viteUrl)}`),
+      );
     } else {
       console.log(
-        `  ${chalk.dim("UI:")}       ${chalk.cyan(this.viteUrl)} ${chalk.dim("(start it separately, e.g. `npm run dev:ui`)")}`,
+        taggedRow(
+          "skip",
+          "ui",
+          `${dim("vite not started \u2014")} ${value("npm run dev:ui")}`,
+        ),
       );
-      console.log();
     }
 
     const host =
@@ -139,12 +149,36 @@ class DevSession {
         ? this.launchMacosHost()
         : this.launchWindowsHost();
 
+    if (this.vite) {
+      console.log(
+        taggedRow(
+          "active",
+          null,
+          `${lime("hot reload active")} ${dim("\u2014 edit ui/src and save")}`,
+        ),
+      );
+      console.log();
+      console.log(
+        footer(
+          `${dim("watching")} ${value("ui/")} ${dim(
+            "\u00b7 hot reload on save \u00b7 ctrl-c to stop",
+          )}`,
+        ),
+      );
+    } else {
+      console.log();
+      console.log(
+        footer(dim("host only \u00b7 serve the UI separately \u00b7 ctrl-c to stop")),
+      );
+    }
+    console.log();
+
     await waitForExit(...(vite ? [vite, host] : [host]));
   }
 
   private installSignalHandlers(): void {
     process.on("SIGINT", () => {
-      console.log("\n\x1b[90m[vidra]\x1b[0m Shutting down...");
+      console.log("\n" + footer(dim("shutting down\u2026")));
       this.shutdown(0);
     });
     process.on("SIGTERM", () => {
@@ -153,7 +187,7 @@ class DevSession {
   }
 
   private startVite(): ChildProcess {
-    console.log(`  ${chalk.dim("Starting Vite dev server...")}`);
+    console.log(taggedRow("active", "ui", dim("starting dev server\u2026")));
     const vite = spawn(NPM_COMMAND, ["run", "dev"], {
       cwd: this.project.uiDir,
       stdio: ["ignore", "pipe", "pipe"],
@@ -163,7 +197,11 @@ class DevSession {
 
   private launchMacosHost(): ChildProcess {
     console.log(
-      `  ${chalk.dim(`Building MAUI host (${this.target.framework})...`)}`,
+      taggedRow(
+        "active",
+        "host",
+        `${dim("building")} ${value(this.target.framework)} ${dim("\u2026")}`,
+      ),
     );
 
     try {
@@ -184,14 +222,12 @@ class DevSession {
       );
     } catch (error) {
       const output = formatBuildError(error);
-      console.error(chalk.red("  MAUI build failed."));
-      console.error(chalk.dim(output));
+      console.error(taggedRow("error", "host", dim("MAUI build failed")));
+      console.error(dim(output));
       if (looksLikeMissingWorkload(output)) printWorkloadHint();
       else if (looksLikeMissingXcode(output)) printXcodeHint();
       if (!this.verbose) {
-        console.error(
-          chalk.dim("  Re-run with --verbose for the full build log."),
-        );
+        console.error(footer(dim("re-run with --verbose for the full build log.")));
       }
       process.exit(1);
     }
@@ -203,9 +239,12 @@ class DevSession {
     );
     if (!appBundle) {
       console.error(
-        chalk.red(
-          `  Could not find .app bundle in ${path.join(this.project.hostDir, "bin", this.buildConfig, this.target.framework)}`,
-        ),
+        row({
+          glyph: "error",
+          detail: dim(
+            `could not find .app bundle in ${path.join(this.project.hostDir, "bin", this.buildConfig, this.target.framework)}`,
+          ),
+        }),
       );
       process.exit(1);
     }
@@ -219,12 +258,17 @@ class DevSession {
     const binary = findMacExecutable(appBundle);
     if (!binary) {
       console.error(
-        chalk.red(`  Could not find the app executable in ${appBundle}.`),
+        row({
+          glyph: "error",
+          detail: dim(`could not find the app executable in ${appBundle}`),
+        }),
       );
       process.exit(1);
     }
 
-    console.log(`  ${chalk.dim("Launching host...")}`);
+    console.log(
+      taggedRow("done", "host", `${dim("launched")} ${value(path.basename(appBundle))}`),
+    );
     const host = spawn(binary, [], {
       cwd: this.project.root,
       stdio: ["ignore", "pipe", "pipe"],
@@ -234,7 +278,7 @@ class DevSession {
   }
 
   private launchWindowsHost(): ChildProcess {
-    console.log(`  ${chalk.dim("Launching host...")}`);
+    console.log(taggedRow("active", "host", dim("launching\u2026")));
     const host = spawn(
       DOTNET_COMMAND,
       [
@@ -257,7 +301,7 @@ class DevSession {
 
   private registerChild(
     child: ChildProcess,
-    tag: string,
+    tag: TagName,
     label: string,
   ): ChildProcess {
     this.children.push(child);
@@ -270,7 +314,7 @@ class DevSession {
       if (tag === "ui") {
         const exitCode = code ?? 1;
         console.error(
-          chalk.red(`\n  ${label} exited with code ${exitCode}.`),
+          "\n" + row({ glyph: "error", detail: dim(`${label} exited with code ${exitCode}`) }),
         );
         this.shutdown(exitCode);
         return;
@@ -279,9 +323,13 @@ class DevSession {
       const failed = (code !== null && code !== 0) || signal !== null;
       if (failed) {
         console.error(
-          chalk.red(
-            `\n  ${label} exited with ${signal ? `signal ${signal}` : `code ${code}`}.`,
-          ),
+          "\n" +
+            row({
+              glyph: "error",
+              detail: dim(
+                `${label} exited with ${signal ? `signal ${signal}` : `code ${code}`}`,
+              ),
+            }),
         );
         if (tag === "host" && this.target.name === "macos") {
           printMacLaunchHint();
@@ -292,7 +340,9 @@ class DevSession {
 
     child.on("error", (error) => {
       if (this.shuttingDown) return;
-      console.error(chalk.red(`\n  Failed to start ${label}: ${error.message}`));
+      console.error(
+        "\n" + row({ glyph: "error", detail: dim(`failed to start ${label}: ${error.message}`) }),
+      );
       if (tag === "host" && this.target.name === "macos") {
         printMacLaunchHint();
       }
@@ -316,13 +366,15 @@ class DevSession {
 
 const ensureTargetMatchesHostOs = (targetName: DevTargetName): void => {
   if (targetName === "macos" && process.platform !== "darwin") {
-    console.error(chalk.red("  The macOS dev target can only run on macOS."));
+    console.error(
+      row({ glyph: "error", detail: dim("the macOS target can only run on macOS") }),
+    );
     process.exit(1);
   }
 
   if (targetName === "windows" && process.platform !== "win32") {
     console.error(
-      chalk.red("  The Windows dev target can only run on Windows."),
+      row({ glyph: "error", detail: dim("the Windows target can only run on Windows") }),
     );
     process.exit(1);
   }
@@ -330,15 +382,16 @@ const ensureTargetMatchesHostOs = (targetName: DevTargetName): void => {
 
 const prefixStream = (
   stream: NodeJS.ReadableStream | null,
-  tag: string,
+  tag: TagName,
 ): void => {
   if (!stream) return;
 
+  const prefix = streamPrefix(tag);
   stream.on("data", (chunk) => {
     const lines = chunk.toString().split("\n");
     for (const line of lines) {
       if (line.length > 0) {
-        process.stdout.write(`\x1b[90m[${tag}]\x1b[0m ${line}\n`);
+        process.stdout.write(`${prefix} ${line}\n`);
       }
     }
   });
@@ -446,20 +499,24 @@ const killChild = (child: ChildProcess): void => {
 
 const printMacLaunchHint = (): void => {
   console.error();
-  console.error(chalk.yellow("  The host built but the app couldn't launch."));
   console.error(
-    chalk.dim(
-      "  On macOS this is usually code signing / Gatekeeper for a locally built app:",
+    row({ glyph: "manual", label: "the host built but the app couldn't launch." }),
+  );
+  console.error(
+    footer(
+      dim(
+        "on macOS this is usually code signing / Gatekeeper for a locally built app:",
+      ),
     ),
   );
   console.error(
-    `    ${chalk.dim("•")} Install full Xcode, then run ${chalk.cyan("vidra doctor")} to verify`,
+    `      ${dim("\u2022")} ${dim("install full Xcode, then run")} ${lime("vidra doctor")} ${dim("to verify")}`,
   );
   console.error(
-    `    ${chalk.dim("•")} Approve it once in Finder: right-click the ${chalk.cyan(".app")} and choose ${chalk.cyan("Open")}`,
+    `      ${dim("\u2022")} ${dim("approve it once in Finder: right-click the")} ${value(".app")} ${dim("and choose")} ${value("Open")}`,
   );
   console.error(
-    `    ${chalk.dim("•")} Or provide a signing identity via ${chalk.cyan("VIDRA_MACOS_CODESIGN_KEY")}`,
+    `      ${dim("\u2022")} ${dim("or provide a signing identity via")} ${value("VIDRA_MACOS_CODESIGN_KEY")}`,
   );
   console.error();
 };

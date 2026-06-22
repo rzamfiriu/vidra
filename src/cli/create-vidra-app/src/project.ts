@@ -1,6 +1,6 @@
 import path from "node:path";
 import fs from "fs-extra";
-import chalk from "chalk";
+import { dim, footer, row } from "./theme.js";
 
 export interface ProjectInfo {
   root: string;
@@ -57,10 +57,15 @@ export const detectProject = (cwd: string): ProjectInfo => {
   }
 
   console.error(
-    chalk.red(
-      "  Could not detect Vidra project. Run this command from your project root.\n" +
-        "  Expected: package.json, ui/, src/<Name>.Host/<Name>.Host.csproj",
-    ),
+    row({
+      glyph: "error",
+      detail: dim(
+        "Could not detect Vidra project. Run this command from your project root.",
+      ),
+    }),
+  );
+  console.error(
+    footer(dim("expected: package.json, ui/, src/<Name>.Host/<Name>.Host.csproj")),
   );
   process.exit(1);
 };

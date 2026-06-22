@@ -1,6 +1,6 @@
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import chalk from "chalk";
+import { dim, footer, row, STEP_LABEL_WIDTH, value } from "./theme.js";
 
 export interface SignMacAppBundleOptions {
   verbose: boolean;
@@ -31,22 +31,32 @@ export const signMacAppBundleIfPossible = (
       },
     );
     options.log(
-      identity
-        ? `  ${chalk.dim("Signing:")}  ${chalk.cyan(label)} ${chalk.dim(`with ${identity}`)}`
-        : `  ${chalk.dim("Signing:")}  ${chalk.cyan(label)} ${chalk.dim("ad-hoc (no developer identity)")}`,
+      row({
+        glyph: "done",
+        label: "codesign",
+        labelWidth: STEP_LABEL_WIDTH,
+        detail: identity
+          ? `${value(label)} ${dim(`with ${identity}`)}`
+          : `${value(label)} ${dim("ad-hoc (-)")}`,
+      }),
     );
   } catch (error) {
     options.warn(
-      chalk.yellow(
-        "  Could not code-sign the macOS app bundle; it may fail to launch.",
-      ),
+      row({
+        glyph: "manual",
+        label: "codesign",
+        labelWidth: STEP_LABEL_WIDTH,
+        detail: dim("could not sign the app bundle; it may fail to launch"),
+      }),
     );
     options.warn(
-      chalk.yellow(
-        "  Install Xcode or the Command Line Tools (provides `codesign`), or set VIDRA_MACOS_CODESIGN_KEY.",
+      footer(
+        dim(
+          "install Xcode or the Command Line Tools (provides `codesign`), or set VIDRA_MACOS_CODESIGN_KEY.",
+        ),
       ),
     );
-    options.warn(chalk.dim(formatExecError(error)));
+    options.warn(dim(formatExecError(error)));
   }
 };
 

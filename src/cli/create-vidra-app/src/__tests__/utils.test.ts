@@ -93,13 +93,13 @@ describe("parseArgs", () => {
     expect(parsed.verbose).toBe(true);
   });
 
-  // Current behavior: a bare flag ALWAYS consumes the next argv token,
-  // even when that token is another flag. This is a minor quirk; if we
-  // change it, this test should flip to expect `{ verbose: true, platform: "mac" }`.
-  it("consumes the next token after a bare flag (quirk)", () => {
+  // A bare flag does not swallow a following flag: `--verbose --platform mac`
+  // reads `verbose` as a boolean and `platform` as `mac`.
+  it("treats a bare flag followed by another flag as boolean", () => {
     const parsed = call("--verbose", "--platform", "mac");
-    expect(parsed.verbose).toBe("--platform");
-    expect(parsed._).toEqual(["mac"]);
+    expect(parsed.verbose).toBe(true);
+    expect(parsed.platform).toBe("mac");
+    expect(parsed._).toEqual([]);
   });
 
   it("mixes positional and flag args", () => {
