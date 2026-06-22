@@ -21,14 +21,16 @@ export const windowsTarget: BuildTarget = {
   extraPublishArgs:
     "-p:WindowsPackageType=None -p:SelfContained=true -p:WindowsAppSDKSelfContained=true -p:RuntimeIdentifierOverride=win-x64",
 
-  findBundle(publishDir: string, projectName: string): string | null {
-    const exe = `${projectName}.exe`;
-    // `dotnet publish` writes the self-contained output to <rid>/publish/.
+  findBundle(publishDir: string, _projectName: string): string | null {
+    // `dotnet publish` writes the self-contained output to <rid>/publish/. The
+    // app executable is named after the host *assembly* (e.g. `<Name>.Host.exe`),
+    // not the stripped project name, so match any `.exe` rather than a specific
+    // filename.
     const preferred = path.join(publishDir, "win-x64", "publish");
-    if (fs.existsSync(path.join(preferred, exe))) return preferred;
+    if (dirContainsExe(preferred)) return preferred;
     // Fall back to a recursive search so we stay resilient to SDK layout
     // changes, preferring a directory literally named `publish`.
-    return findDirWithFile(publishDir, exe);
+    return findDirWithExe(publishDir);
   },
 
   async package(
@@ -66,22 +68,27 @@ export const windowsTarget: BuildTarget = {
   },
 };
 
+const dirContainsExe = (dir: string): boolean =>
+  fs.existsSync(dir) &&
+  fs
+    .readdirSync(dir, { withFileTypes: true })
+    .some((e) => e.isFile() && e.name.toLowerCase().endsWith(".exe"));
+
 /**
- * Depth-first search for the directory containing {@link fileName}. Prefers a
+ * Depth-first search for a directory that contains an `.exe`. Prefers a
  * directory named `publish` (the canonical `dotnet publish` output) and falls
  * back to the first match found anywhere under {@link root}.
  */
-const findDirWithFile = (root: string, fileName: string): string | null => {
+const findDirWithExe = (root: string): string | null => {
   if (!fs.existsSync(root)) return null;
   let fallback: string | null = null;
 
   const walk = (dir: string): string | null => {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-    if (entries.some((e) => e.isFile() && e.name === fileName)) {
+    if (dirContainsExe(dir)) {
       if (path.basename(dir) === "publish") return dir;
       fallback ??= dir;
     }
-    for (const e of entries) {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
       if (e.isDirectory()) {
         const found = walk(path.join(dir, e.name));
         if (found) return found;
