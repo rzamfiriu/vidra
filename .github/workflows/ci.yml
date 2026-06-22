@@ -111,9 +111,11 @@ jobs:
           - os: windows-latest
             tfm: net10.0-windows10.0.19041.0
             maui-workload: maui-windows
+            target: windows
           - os: macos-latest
             tfm: net10.0-maccatalyst
             maui-workload: maui
+            target: macos
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -235,3 +237,41 @@ jobs:
         run: |
           npm ci || npm install
           npm run build --if-present
+
+      # ---- Packaging smoke: run the real `vidra build` end-to-end ----
+      #
+      # The steps above only prove the scaffolded host *builds* (Debug,
+      # unpackaged). This runs the full `vidra build` pipeline — UI build,
+      # asset copy, `dotnet publish -c Release`, codesign (macOS), and
+      # DMG/MSIX packaging — and asserts an installer actually lands in
+      # dist/. It is the only coverage for the distribution path. We invoke
+      # the built CLI directly (the `vidra` bin → dist/cli.js) so the check
+      # doesn't depend on the scaffolded app's node_modules/.bin.
+      - name: Package the scaffolded app (vidra build --target ${{ matrix.target }})
+        shell: bash
+        working-directory: ${{ runner.temp }}/vidra-smoke
+        run: |
+          node "$GITHUB_WORKSPACE/src/cli/create-vidra-app/dist/cli.js" \
+            build --target ${{ matrix.target }} --verbose
+
+      - name: Verify a distributable artifact was produced
+        shell: bash
+        working-directory: ${{ runner.temp }}/vidra-smoke
+        run: |
+          echo "Contents of dist/:"
+          ls -la dist/ 2>/dev/null || { echo "::error::vidra build did not create a dist/ directory"; exit 1; }
+          shopt -s nullglob
+          artifacts=(dist/*.dmg dist/*.msix dist/*.msixbundle)
+          if [ ${#artifacts[@]} -eq 0 ]; then
+            echo "::error::vidra build produced no .dmg/.msix artifact for target ${{ matrix.target }}"
+            exit 1
+          fi
+          echo "Produced artifact(s): ${artifacts[*]}"
+
+      - name: Upload packaged installer
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vidra-installer-${{ matrix.os }}
+          path: ${{ runner.temp }}/vidra-smoke/dist/*
+          if-no-files-found: ignore
