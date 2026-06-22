@@ -261,9 +261,9 @@ jobs:
           echo "Contents of dist/:"
           ls -la dist/ 2>/dev/null || { echo "::error::vidra build did not create a dist/ directory"; exit 1; }
           shopt -s nullglob
-          artifacts=(dist/*.dmg dist/*.msix dist/*.msixbundle)
+          artifacts=(dist/*.dmg dist/*.zip dist/*.msix dist/*.msixbundle)
           if [ ${#artifacts[@]} -eq 0 ]; then
-            echo "::error::vidra build produced no .dmg/.msix artifact for target ${{ matrix.target }}"
+            echo "::error::vidra build produced no installer (.dmg/.zip) for target ${{ matrix.target }}"
             exit 1
           fi
           echo "Produced artifact(s): ${artifacts[*]}"

@@ -37,11 +37,11 @@ const TARGETS: Record<string, BuildTarget> = {
 };
 
 const packageLabel = (target: BuildTarget): string =>
-  target.name === "macos" ? "package DMG" : "package MSIX";
+  target.name === "macos" ? "package DMG" : "package ZIP";
 
 const artifactName = (project: ProjectInfo, target: BuildTarget): string =>
   `${project.projectName}-${project.displayVersion}-${target.name}.${
-    target.name === "macos" ? "dmg" : "msix"
+    target.name === "macos" ? "dmg" : "zip"
   }`;
 
 export const buildCommand = async (argv: string[]): Promise<void> => {
@@ -180,9 +180,9 @@ const printBuildPlan = (project: ProjectInfo, target: BuildTarget): void => {
     console.log(
       row({
         glyph: "active",
-        label: "package MSIX",
+        label: "package ZIP",
         labelWidth: LABEL_WIDTH,
-        detail: `${dim("\u2192")} ${value(artifactName(project, target))}`,
+        detail: `${dim("self-contained \u2192")} ${value(artifactName(project, target))}`,
       }),
     );
   }

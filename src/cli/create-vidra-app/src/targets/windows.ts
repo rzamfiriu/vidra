@@ -1,41 +1,94 @@
 import path from "node:path";
+import os from "node:os";
 import fs from "fs-extra";
+import { execFileSync } from "node:child_process";
 import type { AppMeta, BuildTarget } from "./types.js";
 
+/**
+ * The scaffolded host is an unpackaged Win32 app (`WindowsPackageType=None`, no
+ * `Package.appxmanifest`), so we can't emit an MSIX without re-authoring the
+ * project and signing it. Instead we publish a self-contained, unpackaged build
+ * — a folder with the `.exe`, the .NET runtime, and a bundled WindowsAppSDK —
+ * and zip it. The result runs on any Windows machine once unzipped: no runtime
+ * install, and no code-signing / certificate-trust dance.
+ */
 export const windowsTarget: BuildTarget = {
   name: "windows",
   framework: "net10.0-windows10.0.19041.0",
+  // `RuntimeIdentifierOverride` (rather than `-r`/`RuntimeIdentifier`) is the
+  // MAUI-recommended way to set the Windows RID — it sidesteps WindowsAppSDK
+  // issue #3337, which otherwise pulls in the wrong packaging assets.
   extraPublishArgs:
-    "-p:RuntimeIdentifierOverride=win-x64 -p:WindowsPackageType=MSIX",
+    "-p:WindowsPackageType=None -p:SelfContained=true -p:WindowsAppSDKSelfContained=true -p:RuntimeIdentifierOverride=win-x64",
 
-  findBundle(publishDir: string, _projectName: string): string | null {
-    const appPackagesDir = path.join(publishDir, "win-x64", "AppPackages");
-    if (!fs.existsSync(appPackagesDir)) return null;
-
-    for (const entry of fs.readdirSync(appPackagesDir, {
-      withFileTypes: true,
-    })) {
-      if (!entry.isDirectory()) continue;
-      const subDir = path.join(appPackagesDir, entry.name);
-      for (const file of fs.readdirSync(subDir)) {
-        if (file.endsWith(".msix")) {
-          return path.join(subDir, file);
-        }
-      }
-    }
-    return null;
+  findBundle(publishDir: string, projectName: string): string | null {
+    const exe = `${projectName}.exe`;
+    // `dotnet publish` writes the self-contained output to <rid>/publish/.
+    const preferred = path.join(publishDir, "win-x64", "publish");
+    if (fs.existsSync(path.join(preferred, exe))) return preferred;
+    // Fall back to a recursive search so we stay resilient to SDK layout
+    // changes, preferring a directory literally named `publish`.
+    return findDirWithFile(publishDir, exe);
   },
 
   async package(
-    msixPath: string,
+    publishOutputDir: string,
     outputDir: string,
     meta: AppMeta,
   ): Promise<string> {
-    const outName = `${meta.projectName}-${meta.displayVersion}-windows.msix`;
+    const outName = `${meta.projectName}-${meta.displayVersion}-windows.zip`;
     const outPath = path.join(outputDir, outName);
+    if (fs.existsSync(outPath)) fs.removeSync(outPath);
 
-    fs.copySync(msixPath, outPath, { overwrite: true });
+    // Stage under a single <ProjectName>/ folder so unzipping yields one tidy
+    // directory instead of spraying the runtime files into the current folder.
+    const staging = fs.mkdtempSync(path.join(os.tmpdir(), "vidra-zip-"));
+    const stagedApp = path.join(staging, meta.projectName);
+    try {
+      fs.copySync(publishOutputDir, stagedApp);
+      // `Compress-Archive` ships with Windows PowerShell, so packaging needs no
+      // extra tooling on the build machine.
+      execFileSync(
+        "powershell",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          `Compress-Archive -Path "${stagedApp}" -DestinationPath "${outPath}" -Force`,
+        ],
+        { stdio: "pipe" },
+      );
+    } finally {
+      fs.removeSync(staging);
+    }
 
     return outPath;
   },
+};
+
+/**
+ * Depth-first search for the directory containing {@link fileName}. Prefers a
+ * directory named `publish` (the canonical `dotnet publish` output) and falls
+ * back to the first match found anywhere under {@link root}.
+ */
+const findDirWithFile = (root: string, fileName: string): string | null => {
+  if (!fs.existsSync(root)) return null;
+  let fallback: string | null = null;
+
+  const walk = (dir: string): string | null => {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    if (entries.some((e) => e.isFile() && e.name === fileName)) {
+      if (path.basename(dir) === "publish") return dir;
+      fallback ??= dir;
+    }
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        const found = walk(path.join(dir, e.name));
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  return walk(root) ?? fallback;
 };
