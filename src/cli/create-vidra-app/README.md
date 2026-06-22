@@ -20,13 +20,16 @@ cd my-app
 npm run dev   # starts Vite + the native host together
 ```
 
-This package also installs the `vidra` CLI used by scaffolded apps:
+Scaffolded apps get the `vidra` CLI as a local dev dependency — there's no
+global `vidra` to install. Run it from inside your project via the npm scripts
+or `npx`:
 
 ```bash
-vidra dev                   # start Vite + native host
-vidra dev --target windows  # run the Windows host
-vidra build --target macos  # build + package a macOS .dmg
-vidra doctor                # check your .NET / MAUI / Xcode setup
+npm run dev                     # start Vite + native host
+npm run build                   # build + package for distribution
+npm run doctor                  # check your .NET / MAUI / Xcode setup
+npx vidra dev --target windows  # run a specific desktop target
+npx vidra build --target macos  # build + package a macOS .dmg
 ```
 
 ## Prerequisites
@@ -38,7 +41,7 @@ vidra doctor                # check your .NET / MAUI / Xcode setup
 
 If the MAUI workload is missing, `create-vidra-app` will detect it after
 scaffolding and offer to install it for you. You can re-check at any time with
-`vidra doctor`.
+`npm run doctor`.
 
 ## License
 

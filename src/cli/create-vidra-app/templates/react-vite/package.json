@@ -6,7 +6,8 @@
     "dev": "vidra dev",
     "dev:ui": "npm run dev --prefix ui",
     "dev:host:macos": "vidra run --target macos",
-    "dev:host:windows": "vidra run --target windows"
+    "dev:host:windows": "vidra run --target windows",
+    "doctor": "vidra doctor"
   },
   "devDependencies": {
     "create-vidra-app": "{{cliVersion}}"

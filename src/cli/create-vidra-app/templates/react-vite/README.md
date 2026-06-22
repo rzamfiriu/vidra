@@ -14,11 +14,15 @@ A cross-platform application built with [Vidra](https://github.com/user/vidra) â
 Not sure if you're set up? Run:
 
 ```bash
-vidra doctor
+npm run doctor
 ```
 
 It checks your .NET SDK, the MAUI workload, and (on macOS) Xcode, and prints the
 exact command to fix anything that's missing.
+
+> The `vidra` CLI ships as a local dev dependency of this project, so run it
+> through npm (`npm run dev`, `npm run doctor`) or with `npx vidra <command>` â€”
+> there is no global `vidra` command to install.
 
 ### Development
 
@@ -31,8 +35,8 @@ This starts the Vite dev server and launches the native host for the current OS.
 To target a specific desktop platform explicitly:
 
 ```bash
-vidra dev --target macos
-vidra dev --target windows
+npx vidra dev --target macos
+npx vidra dev --target windows
 ```
 
 If you want to run the pieces separately:

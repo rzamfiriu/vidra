@@ -188,9 +188,14 @@ class DevSession {
 
   private startVite(): ChildProcess {
     console.log(taggedRow("active", "ui", dim("starting dev server\u2026")));
+    // `npm` on Windows is a `.cmd` shim, and since the fix for CVE-2024-27980
+    // Node refuses to `spawn` `.cmd`/`.bat` files directly (it throws
+    // `spawn EINVAL`) unless they're run through a shell. `taskkill /T` in
+    // killChild already tears down the wrapping cmd.exe and its children.
     const vite = spawn(NPM_COMMAND, ["run", "dev"], {
       cwd: this.project.uiDir,
       stdio: ["ignore", "pipe", "pipe"],
+      shell: process.platform === "win32",
     });
     return this.registerChild(vite, "ui", "Vite dev server");
   }

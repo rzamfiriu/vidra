@@ -212,7 +212,7 @@ const main = async (): Promise<void> => {
   );
   if (!prereqsReady) {
     console.log(
-      `    ${dim("tip: run")} ${lime("vidra doctor")} ${dim("to verify your setup first")}`,
+      `    ${dim("tip: run")} ${lime("npm run doctor")} ${dim("to verify your setup first")}`,
     );
   }
   console.log();

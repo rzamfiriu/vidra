@@ -57,19 +57,21 @@ OS together, with hot reload on the web side.
 - [Node.js](https://nodejs.org/) 18+
 - macOS targets require Xcode; Windows targets must be built on Windows
 
-Not sure you're set up? Run `vidra doctor` to check your .NET SDK, MAUI workload, and
+Not sure you're set up? Run `npm run doctor` to check your .NET SDK, MAUI workload, and
 (on macOS) Xcode, and print the exact command to fix anything missing.
 
 ### The `vidra` CLI
 
-`create-vidra-app` also installs the `vidra` CLI used inside a project:
+The `vidra` CLI is a local dev dependency of each scaffolded app — there's no global
+`vidra` to install. Run it from inside your project via the npm scripts or `npx`:
 
 ```bash
-vidra dev                   # start Vite + native host (hot reload)
-vidra dev --target windows  # run a specific desktop target
-vidra run                   # launch the native host only
-vidra build --target macos  # build + package for distribution
-vidra doctor                # verify your environment
+npm run dev                     # start Vite + native host (hot reload)
+npm run build                   # build + package for distribution
+npm run doctor                  # verify your environment
+npx vidra run                   # launch the native host only
+npx vidra dev --target windows  # run a specific desktop target
+npx vidra build --target macos  # build & package a specific target
 ```
 
 ## How it works
