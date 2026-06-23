@@ -143,6 +143,42 @@ public sealed class ContractFixtureTests
         errored.Error!.Code.Should().Be("HANDLER_ERROR");
     }
 
+    [Fact]
+    public void Enum_Event_Fixture_Matches_Serialized_Wire_Format()
+    {
+        // Pins the enum wire format shared with the SDK: C# enums must cross
+        // the bridge as camelCase string-union members (and enum arrays as
+        // string arrays), matching event.connectivity_changed.json.
+        var ev = new BridgeEvent
+        {
+            Event = "connectivity.changed",
+            Data = new SampleConnectivity(
+                SampleAccess.Internet,
+                new[] { SampleProfile.Wifi, SampleProfile.Ethernet }),
+        };
+
+        var actual = AsElement(BridgeSerializer.Serialize(ev));
+        var expected = AsElement(ReadFixture("event.connectivity_changed.json"));
+
+        actual.GetProperty("event").GetString()
+            .Should().Be(expected.GetProperty("event").GetString());
+
+        var actualData = actual.GetProperty("data");
+        var expectedData = expected.GetProperty("data");
+
+        actualData.GetProperty("access").GetString()
+            .Should().Be(expectedData.GetProperty("access").GetString());
+
+        actualData.GetProperty("profiles").EnumerateArray().Select(e => e.GetString())
+            .Should().Equal(expectedData.GetProperty("profiles").EnumerateArray().Select(e => e.GetString()));
+    }
+
+    private enum SampleAccess { Unknown, None, Local, ConstrainedInternet, Internet }
+
+    private enum SampleProfile { Unknown, Bluetooth, Cellular, Ethernet, Wifi }
+
+    private sealed record SampleConnectivity(SampleAccess Access, SampleProfile[] Profiles);
+
     // The capabilities fixture advertises only the `ping` and `fail` methods.
     // We model a trimmed-down module so the shape matches exactly without
     // cross-cutting the richer EchoModule used elsewhere.

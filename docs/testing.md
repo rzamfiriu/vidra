@@ -29,6 +29,7 @@ We follow a pyramid:
 | Unit        | `tests/dotnet/Vidra.CodeGen.Tests` (incl. TS snapshots)     | `ubuntu-latest`       |
 | Unit        | `tests/dotnet/Vidra.Modules.FileSystem.Tests`               | `ubuntu-latest`       |
 | Unit        | `tests/dotnet/Vidra.Modules.Windowing.Tests`                | `ubuntu-latest`       |
+| Unit        | `tests/dotnet/Vidra.Modules.Essentials.Tests`               | `ubuntu-latest`       |
 | Unit        | `src/sdk/vidra-js` Vitest (`client`, `transport`)           | `ubuntu-latest`       |
 | Unit        | `src/cli/create-vidra-app` Vitest (`utils`, `project`, ...) | `ubuntu-latest`       |
 | Contract    | `tests/contract/fixtures/*.json` via `ContractFixtureTests` | `ubuntu-latest`       |
@@ -45,6 +46,7 @@ dotnet test tests/dotnet/Vidra.Bridge.Tests/Vidra.Bridge.Tests.csproj
 dotnet test tests/dotnet/Vidra.CodeGen.Tests/Vidra.CodeGen.Tests.csproj
 dotnet test tests/dotnet/Vidra.Modules.FileSystem.Tests/Vidra.Modules.FileSystem.Tests.csproj
 dotnet test tests/dotnet/Vidra.Modules.Windowing.Tests/Vidra.Modules.Windowing.Tests.csproj
+dotnet test tests/dotnet/Vidra.Modules.Essentials.Tests/Vidra.Modules.Essentials.Tests.csproj
 
 # SDK
 cd src/sdk/vidra-js && npm install && npm test
@@ -167,7 +169,36 @@ For each platform, run a UI that calls `appWindow` via the SDK and verify:
 - [ ] `app.beforeQuit` fires before the process exits, and a handler that
       returns a promise can delay the quit.
 
-### 8. macOS code signing & notarization
+### 8. MAUI Essentials modules
+
+Run a UI that calls each module via the SDK on each platform:
+
+- [ ] `secureStorage.set` then `get` round-trips a value; `get` on a missing key
+      returns `null`; `remove` / `removeAll` clear entries. Values persist across
+      an app restart (Keychain on macOS, Credential Locker on Windows).
+- [ ] `preferences` `set` / `get` / `containsKey` / `remove` / `clear` round-trip
+      and persist across restart.
+- [ ] `device.getInfo()` / `getDisplay()` report the real machine and display metrics.
+- [ ] `share.shareText({ text })` opens the OS share sheet (macOS) / share UI (Windows).
+- [ ] `browser.open({ url })` opens the default browser; `mode: "external"` also works.
+- [ ] `launcher.open({ uri: "mailto:test@example.com" })` launches the mail client;
+      `canOpen` returns the expected boolean.
+- [ ] `email.compose({ ... })` opens the composer when a mail client is configured;
+      `essentials.getSupport().email` is `false` when none is.
+- [ ] `filePicker.pickOne()` returns file metadata and `null` on cancel;
+      `pickMultiple()` returns all selected files; the returned `fullPath` is
+      readable via `filesystem.readText`.
+- [ ] `textToSpeech.speak({ text })` plays audio and the promise resolves when done.
+- [ ] `connectivity.getStatus()` reflects the current network; `connectivity.onChanged`
+      fires when toggling Wi-Fi/Ethernet, with `access` / `profiles` as the
+      documented string unions.
+- [ ] `battery.getStatus()` reports level/state; `battery.onChanged` fires when
+      (un)plugging power or toggling battery saver. Desktops without a battery
+      report `state: "notPresent"` (or `"unknown"`) without crashing.
+- [ ] `essentials.getSupport()` returns a `platform` matching the host and a
+      boolean per capability.
+
+### 9. macOS code signing & notarization
 
 - [ ] `vidra build --target macos` signs the `.app` with the identity
       picked up from `resolveMacCodeSigningIdentity()` (see CLI
@@ -179,7 +210,7 @@ For each platform, run a UI that calls `appWindow` via the SDK and verify:
 - [ ] `xcrun notarytool submit ...` + stapling works for a release build
       (run only before a public release, since it hits Apple servers).
 
-### 9. Windows packaging
+### 10. Windows packaging
 
 - [ ] MSIX build runs without errors for `net10.0-windows10.0.19041.0`.
 - [ ] Installing the unsigned MSIX on a dev machine with developer mode
@@ -187,7 +218,7 @@ For each platform, run a UI that calls `appWindow` via the SDK and verify:
 - [ ] Signed MSIX installs on a clean VM without SmartScreen warnings
       (run only before a public release).
 
-### 10. Regression safety net
+### 11. Regression safety net
 
 - [ ] Full automated suite is green on `main` at the release commit.
 - [ ] Scaffolded template in step 1 runs cleanly against the published

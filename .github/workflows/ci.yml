@@ -39,6 +39,7 @@ jobs:
           dotnet restore tests/dotnet/Vidra.CodeGen.Tests/Vidra.CodeGen.Tests.csproj
           dotnet restore tests/dotnet/Vidra.Modules.FileSystem.Tests/Vidra.Modules.FileSystem.Tests.csproj
           dotnet restore tests/dotnet/Vidra.Modules.Windowing.Tests/Vidra.Modules.Windowing.Tests.csproj
+          dotnet restore tests/dotnet/Vidra.Modules.Essentials.Tests/Vidra.Modules.Essentials.Tests.csproj
 
       - name: Build C# test projects
         run: |
@@ -46,6 +47,7 @@ jobs:
           dotnet build tests/dotnet/Vidra.CodeGen.Tests/Vidra.CodeGen.Tests.csproj -c Release --no-restore
           dotnet build tests/dotnet/Vidra.Modules.FileSystem.Tests/Vidra.Modules.FileSystem.Tests.csproj -c Release --no-restore
           dotnet build tests/dotnet/Vidra.Modules.Windowing.Tests/Vidra.Modules.Windowing.Tests.csproj -c Release --no-restore
+          dotnet build tests/dotnet/Vidra.Modules.Essentials.Tests/Vidra.Modules.Essentials.Tests.csproj -c Release --no-restore
 
       - name: Run Vidra.Bridge.Tests
         run: dotnet test tests/dotnet/Vidra.Bridge.Tests/Vidra.Bridge.Tests.csproj -c Release --no-build --logger "trx;LogFileName=bridge.trx"
@@ -58,6 +60,9 @@ jobs:
 
       - name: Run Vidra.Modules.Windowing.Tests
         run: dotnet test tests/dotnet/Vidra.Modules.Windowing.Tests/Vidra.Modules.Windowing.Tests.csproj -c Release --no-build --logger "trx;LogFileName=modules-windowing.trx"
+
+      - name: Run Vidra.Modules.Essentials.Tests
+        run: dotnet test tests/dotnet/Vidra.Modules.Essentials.Tests/Vidra.Modules.Essentials.Tests.csproj -c Release --no-build --logger "trx;LogFileName=modules-essentials.trx"
 
       # ---- TypeScript SDK ----
       - name: Install SDK dependencies

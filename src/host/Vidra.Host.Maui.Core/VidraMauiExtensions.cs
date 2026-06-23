@@ -5,6 +5,7 @@ using Vidra.Modules.Clipboard;
 using Vidra.Modules.Notifications;
 using Vidra.Modules.AppLifecycle;
 using Vidra.Modules.Windowing;
+using Vidra.Modules.Essentials;
 
 namespace Vidra.Hosting;
 
@@ -30,6 +31,21 @@ public static class VidraMauiExtensions
             dispatcher.Register(new NotificationsModule());
             dispatcher.Register(new AppLifecycleModule());
             dispatcher.Register(new AppWindowModule(sp.GetRequiredService<IAppWindowService>()));
+
+            // MAUI Essentials modules.
+            dispatcher.Register(new SecureStorageModule());
+            dispatcher.Register(new PreferencesModule());
+            dispatcher.Register(new DeviceModule());
+            dispatcher.Register(new ShareModule());
+            dispatcher.Register(new BrowserModule());
+            dispatcher.Register(new LauncherModule());
+            dispatcher.Register(new EmailModule());
+            dispatcher.Register(new FilePickerModule());
+            dispatcher.Register(new TextToSpeechModule());
+            dispatcher.Register(new ConnectivityModule());
+            dispatcher.Register(new BatteryModule());
+            dispatcher.Register(new EssentialsSupportModule());
+
             configureModules?.Invoke(dispatcher);
             return dispatcher;
         });

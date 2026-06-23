@@ -10,6 +10,8 @@ export interface EchoResult {
   text: string;
   tags: string[];
   mood: "happy" | "neutral" | "sad";
+  moods: ("happy" | "neutral" | "sad")[];
+  note?: string | null;
 }
 
 export class SampleProxy {

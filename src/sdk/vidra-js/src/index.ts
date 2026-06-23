@@ -23,9 +23,13 @@ export type {
   AppWindowChangedHandler,
   ConfigureAppWindowOptions,
 } from "./appWindow.js";
+export type { ConnectivityChangedHandler } from "./connectivity.js";
+export type { BatteryChangedHandler } from "./battery.js";
 
-// Extend the generated appWindow proxy with ergonomic event helpers.
+// Extend the generated proxies with ergonomic event helpers.
 import "./appWindow.js";
+import "./connectivity.js";
+import "./battery.js";
 
 // Re-export the default singleton (lives in its own module to avoid
 // circular dependencies with the generated proxy barrel).

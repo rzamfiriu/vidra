@@ -4,7 +4,7 @@ import type { VidraClient } from "../singleton.js";
 export interface AlertArgs {
   title: string;
   message: string;
-  ok: string;
+  ok?: string | null;
 }
 
 export interface AlertResult {
@@ -14,8 +14,8 @@ export interface AlertResult {
 export interface ConfirmArgs {
   title: string;
   message: string;
-  accept: string;
-  cancel: string;
+  accept?: string | null;
+  cancel?: string | null;
 }
 
 export interface ConfirmResult {
@@ -24,13 +24,13 @@ export interface ConfirmResult {
 
 export interface PromptArgs {
   title: string;
-  message: string;
-  accept: string;
-  cancel: string;
+  message?: string | null;
+  accept?: string | null;
+  cancel?: string | null;
 }
 
 export interface PromptResult {
-  value: string;
+  value?: string | null;
 }
 
 export class DialogsProxy {

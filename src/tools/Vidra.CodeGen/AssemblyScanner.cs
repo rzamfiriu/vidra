@@ -178,7 +178,18 @@ public sealed class AssemblyScanner
         var fields = new Dictionary<string, TypeRef>();
         foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
         {
-            fields[ToCamelCase(prop.Name)] = ResolveType(prop.PropertyType);
+            var fieldRef = ResolveType(prop.PropertyType);
+
+            // Reference-type nullability (`string?`, `Foo?`) is carried by NRT
+            // annotations, not Nullable<T>, so wrap it here to match the
+            // emitted `field?: T | null`. Value-type nullables are already
+            // handled above via System.Nullable`1.
+            if (fieldRef.Kind != "nullable" && IsNullableReferenceProperty(prop))
+            {
+                fieldRef = new TypeRef { Kind = "nullable", Element = fieldRef };
+            }
+
+            fields[ToCamelCase(prop.Name)] = fieldRef;
         }
 
         return new TypeRef
@@ -188,6 +199,43 @@ public sealed class AssemblyScanner
             Fields = fields.Count > 0 ? fields : null,
         };
     }
+
+    /// <summary>
+    /// Determines whether a reference-typed property is annotated nullable
+    /// (e.g. <c>string?</c>) by reading the C# nullable-reference metadata:
+    /// the property's <c>NullableAttribute</c>, falling back to the declaring
+    /// type's <c>NullableContextAttribute</c>. Flag value 2 means nullable.
+    /// </summary>
+    private static bool IsNullableReferenceProperty(PropertyInfo prop)
+    {
+        if (prop.PropertyType.IsValueType)
+            return false;
+
+        var nullable = prop.GetCustomAttributesData()
+            .FirstOrDefault(a => a.AttributeType.FullName == "System.Runtime.CompilerServices.NullableAttribute");
+        if (nullable is not null && nullable.ConstructorArguments.Count > 0)
+        {
+            return FirstNullableFlag(nullable.ConstructorArguments[0]) == 2;
+        }
+
+        var context = prop.DeclaringType?.GetCustomAttributesData()
+            .FirstOrDefault(a => a.AttributeType.FullName == "System.Runtime.CompilerServices.NullableContextAttribute");
+        if (context is not null && context.ConstructorArguments.Count > 0
+            && context.ConstructorArguments[0].Value is byte contextFlag)
+        {
+            return contextFlag == 2;
+        }
+
+        return false;
+    }
+
+    private static byte FirstNullableFlag(CustomAttributeTypedArgument arg)
+        => arg.Value switch
+        {
+            byte b => b,
+            IReadOnlyList<CustomAttributeTypedArgument> bytes when bytes.Count > 0 => (byte)bytes[0].Value!,
+            _ => 0,
+        };
 
     private static string? MapPrimitive(Type type)
     {

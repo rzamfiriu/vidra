@@ -1,0 +1,7 @@
+{
+  "event": "connectivity.changed",
+  "data": {
+    "access": "internet",
+    "profiles": ["wifi", "ethernet"]
+  }
+}

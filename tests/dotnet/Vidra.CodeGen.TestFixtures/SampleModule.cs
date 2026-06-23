@@ -11,7 +11,7 @@ public enum Mood
 
 public record EchoArgs(string Text, int? Count);
 
-public record EchoResult(string Text, string[] Tags, Mood Mood);
+public record EchoResult(string Text, string[] Tags, Mood Mood, Mood[] Moods, string? Note);
 
 /// <summary>
 /// Fixture module used by the Vidra.CodeGen test suite.
@@ -23,5 +23,5 @@ public sealed class SampleModule : BridgeModuleBase
 {
     [BridgeMethod("echo")]
     public Task<EchoResult> EchoAsync(EchoArgs args, CancellationToken ct)
-        => Task.FromResult(new EchoResult(args.Text, Array.Empty<string>(), Mood.Happy));
+        => Task.FromResult(new EchoResult(args.Text, Array.Empty<string>(), Mood.Happy, new[] { Mood.Happy }, null));
 }

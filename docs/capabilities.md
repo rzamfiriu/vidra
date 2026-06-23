@@ -81,6 +81,119 @@ Notes:
 | `getInfo`  | none    | `{ appName, packageName, version, build, platform, idiom }`  |
 | `getTheme` | none    | `{ theme }`                                                  |
 
+## MAUI Essentials Modules
+
+These modules wrap [.NET MAUI Essentials](https://learn.microsoft.com/dotnet/maui/platform-integration/),
+giving the web layer typed access to platform device features. Call
+`essentials.getSupport()` to feature-detect before invoking a method that may be
+unavailable on the current platform.
+
+### `secureStorage`
+
+Encrypted key/value storage (Keychain on Apple platforms, Credential Locker / DPAPI on Windows).
+
+| Method      | Payload          | Returns        |
+|-------------|------------------|----------------|
+| `get`       | `{ key }`        | `{ value? }`   |
+| `set`       | `{ key, value }` | `{ success }`  |
+| `remove`    | `{ key }`        | `{ removed }`  |
+| `removeAll` | none             | `{ success }`  |
+
+`get` returns `value?: string | null` — `null` when the key is absent.
+
+### `preferences`
+
+Lightweight, unencrypted app settings. Use `secureStorage` for secrets.
+
+| Method        | Payload          | Returns       |
+|---------------|------------------|---------------|
+| `get`         | `{ key }`        | `{ value? }`  |
+| `set`         | `{ key, value }` | `{ success }` |
+| `remove`      | `{ key }`        | `{ success }` |
+| `containsKey` | `{ key }`        | `{ exists }`  |
+| `clear`       | none             | `{ success }` |
+
+### `device`
+
+| Method       | Payload | Returns                                                                |
+|--------------|---------|-----------------------------------------------------------------------|
+| `getInfo`    | none    | `{ model, manufacturer, name, version, platform, idiom, deviceType }` |
+| `getDisplay` | none    | `{ width, height, density, orientation, rotation }`                   |
+
+### `share`
+
+| Method      | Payload                            | Returns       |
+|-------------|------------------------------------|---------------|
+| `shareText` | `{ text, title?, subject?, uri? }` | `{ success }` |
+
+### `browser`
+
+| Method | Payload                                           | Returns       |
+|--------|---------------------------------------------------|---------------|
+| `open` | `{ url, mode?: "systemPreferred" \| "external" }` | `{ success }` |
+
+### `launcher`
+
+Opens URIs in their default handler (`mailto:`, `tel:`, custom schemes, files).
+
+| Method    | Payload   | Returns       |
+|-----------|-----------|---------------|
+| `open`    | `{ uri }` | `{ success }` |
+| `canOpen` | `{ uri }` | `{ canOpen }` |
+
+### `email`
+
+| Method    | Payload                               | Returns       |
+|-----------|---------------------------------------|---------------|
+| `compose` | `{ subject?, body?, to?, cc?, bcc? }` | `{ success }` |
+
+### `filePicker`
+
+Returns file **metadata** only; read contents through `filesystem` using the returned `fullPath`.
+
+| Method         | Payload      | Returns                                             |
+|----------------|--------------|-----------------------------------------------------|
+| `pickOne`      | `{ title? }` | `{ file?: { fileName, fullPath, contentType? } }`   |
+| `pickMultiple` | `{ title? }` | `{ files: [{ fileName, fullPath, contentType? }] }` |
+
+`pickOne` returns `file: null` when the dialog is cancelled.
+
+### `textToSpeech`
+
+| Method  | Payload                     | Returns       |
+|---------|-----------------------------|---------------|
+| `speak` | `{ text, pitch?, volume? }` | `{ success }` |
+
+### `connectivity`
+
+| Method      | Payload | Returns                |
+|-------------|---------|------------------------|
+| `getStatus` | none    | `{ access, profiles }` |
+
+- `access`: `"unknown" | "none" | "local" | "constrainedInternet" | "internet"`
+- `profiles`: `("unknown" | "bluetooth" | "cellular" | "ethernet" | "wifi")[]`
+- Event wrapper: `connectivity.onChanged(handler)` (fires on `connectivity.changed`).
+
+### `battery`
+
+| Method      | Payload | Returns                                            |
+|-------------|---------|----------------------------------------------------|
+| `getStatus` | none    | `{ chargeLevel, state, powerSource, energySaver }` |
+
+- `state`: `"unknown" | "charging" | "discharging" | "full" | "notCharging" | "notPresent"`
+- `powerSource`: `"unknown" | "battery" | "ac" | "wireless"`
+- `energySaver`: `"unknown" | "on" | "off"`
+- Event wrapper: `battery.onChanged(handler)` (fires on `battery.changed`).
+
+### `essentials`
+
+| Method       | Payload | Returns                            |
+|--------------|---------|------------------------------------|
+| `getSupport` | none    | `{ platform, secureStorage, ... }` |
+
+`getSupport()` returns a per-platform boolean for each Essentials capability so the
+frontend can feature-detect (mirrors `appWindow.getSupport()`).
+
 ## Querying Capabilities at Runtime
 
 ```typescript

@@ -7,7 +7,7 @@ export interface RequestPermissionResult {
 
 export interface ShowArgs {
   title: string;
-  body: string;
+  body?: string | null;
 }
 
 export interface ShowResult {

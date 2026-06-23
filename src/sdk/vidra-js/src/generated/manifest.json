@@ -200,8 +200,11 @@
                 "tsType": "string"
               },
               "ok": {
-                "kind": "primitive",
-                "tsType": "string"
+                "kind": "nullable",
+                "element": {
+                  "kind": "primitive",
+                  "tsType": "string"
+                }
               }
             }
           },
@@ -230,12 +233,18 @@
                 "tsType": "string"
               },
               "accept": {
-                "kind": "primitive",
-                "tsType": "string"
+                "kind": "nullable",
+                "element": {
+                  "kind": "primitive",
+                  "tsType": "string"
+                }
               },
               "cancel": {
-                "kind": "primitive",
-                "tsType": "string"
+                "kind": "nullable",
+                "element": {
+                  "kind": "primitive",
+                  "tsType": "string"
+                }
               }
             }
           },
@@ -260,16 +269,25 @@
                 "tsType": "string"
               },
               "message": {
-                "kind": "primitive",
-                "tsType": "string"
+                "kind": "nullable",
+                "element": {
+                  "kind": "primitive",
+                  "tsType": "string"
+                }
               },
               "accept": {
-                "kind": "primitive",
-                "tsType": "string"
+                "kind": "nullable",
+                "element": {
+                  "kind": "primitive",
+                  "tsType": "string"
+                }
               },
               "cancel": {
-                "kind": "primitive",
-                "tsType": "string"
+                "kind": "nullable",
+                "element": {
+                  "kind": "primitive",
+                  "tsType": "string"
+                }
               }
             }
           },
@@ -278,8 +296,11 @@
             "name": "PromptResult",
             "fields": {
               "value": {
-                "kind": "primitive",
-                "tsType": "string"
+                "kind": "nullable",
+                "element": {
+                  "kind": "primitive",
+                  "tsType": "string"
+                }
               }
             }
           }
@@ -299,8 +320,11 @@
                 "tsType": "string"
               },
               "body": {
-                "kind": "primitive",
-                "tsType": "string"
+                "kind": "nullable",
+                "element": {
+                  "kind": "primitive",
+                  "tsType": "string"
+                }
               }
             }
           },
@@ -465,8 +489,11 @@
             "name": "ConfigureWindowArgs",
             "fields": {
               "title": {
-                "kind": "primitive",
-                "tsType": "string"
+                "kind": "nullable",
+                "element": {
+                  "kind": "primitive",
+                  "tsType": "string"
+                }
               },
               "width": {
                 "kind": "nullable",
@@ -753,6 +780,762 @@
                   "Minimized",
                   "Fullscreen"
                 ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "battery": {
+      "className": "BatteryModule",
+      "methods": {
+        "getStatus": {
+          "returns": {
+            "kind": "object",
+            "name": "BatteryStatus",
+            "fields": {
+              "chargeLevel": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "state": {
+                "kind": "enum",
+                "name": "BatteryState",
+                "values": [
+                  "Unknown",
+                  "Charging",
+                  "Discharging",
+                  "Full",
+                  "NotCharging",
+                  "NotPresent"
+                ]
+              },
+              "powerSource": {
+                "kind": "enum",
+                "name": "BatteryPowerSource",
+                "values": [
+                  "Unknown",
+                  "Battery",
+                  "Ac",
+                  "Wireless"
+                ]
+              },
+              "energySaver": {
+                "kind": "enum",
+                "name": "EnergySaverStatus",
+                "values": [
+                  "Unknown",
+                  "On",
+                  "Off"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "browser": {
+      "className": "BrowserModule",
+      "methods": {
+        "open": {
+          "params": {
+            "kind": "object",
+            "name": "BrowserOpenArgs",
+            "fields": {
+              "url": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "mode": {
+                "kind": "nullable",
+                "element": {
+                  "kind": "enum",
+                  "name": "BrowserMode",
+                  "values": [
+                    "SystemPreferred",
+                    "External"
+                  ]
+                }
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "BrowserOpenResult",
+            "fields": {
+              "success": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "connectivity": {
+      "className": "ConnectivityModule",
+      "methods": {
+        "getStatus": {
+          "returns": {
+            "kind": "object",
+            "name": "ConnectivityStatus",
+            "fields": {
+              "access": {
+                "kind": "enum",
+                "name": "NetworkAccess",
+                "values": [
+                  "Unknown",
+                  "None",
+                  "Local",
+                  "ConstrainedInternet",
+                  "Internet"
+                ]
+              },
+              "profiles": {
+                "kind": "array",
+                "element": {
+                  "kind": "enum",
+                  "name": "ConnectionProfile",
+                  "values": [
+                    "Unknown",
+                    "Bluetooth",
+                    "Cellular",
+                    "Ethernet",
+                    "Wifi"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "device": {
+      "className": "DeviceModule",
+      "methods": {
+        "getInfo": {
+          "returns": {
+            "kind": "object",
+            "name": "DeviceInfoResult",
+            "fields": {
+              "model": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "manufacturer": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "name": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "version": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "platform": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "idiom": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "deviceType": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          }
+        },
+        "getDisplay": {
+          "returns": {
+            "kind": "object",
+            "name": "DisplayInfoResult",
+            "fields": {
+              "width": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "height": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "density": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "orientation": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "rotation": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "email": {
+      "className": "EmailModule",
+      "methods": {
+        "compose": {
+          "params": {
+            "kind": "object",
+            "name": "EmailComposeArgs",
+            "fields": {
+              "subject": {
+                "kind": "nullable",
+                "element": {
+                  "kind": "primitive",
+                  "tsType": "string"
+                }
+              },
+              "body": {
+                "kind": "nullable",
+                "element": {
+                  "kind": "primitive",
+                  "tsType": "string"
+                }
+              },
+              "to": {
+                "kind": "nullable",
+                "element": {
+                  "kind": "array",
+                  "element": {
+                    "kind": "primitive",
+                    "tsType": "string"
+                  }
+                }
+              },
+              "cc": {
+                "kind": "nullable",
+                "element": {
+                  "kind": "array",
+                  "element": {
+                    "kind": "primitive",
+                    "tsType": "string"
+                  }
+                }
+              },
+              "bcc": {
+                "kind": "nullable",
+                "element": {
+                  "kind": "array",
+                  "element": {
+                    "kind": "primitive",
+                    "tsType": "string"
+                  }
+                }
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "EmailComposeResult",
+            "fields": {
+              "success": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "essentials": {
+      "className": "EssentialsSupportModule",
+      "methods": {
+        "getSupport": {
+          "returns": {
+            "kind": "object",
+            "name": "EssentialsSupport",
+            "fields": {
+              "platform": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "secureStorage": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              },
+              "preferences": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              },
+              "device": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              },
+              "share": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              },
+              "browser": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              },
+              "launcher": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              },
+              "email": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              },
+              "filePicker": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              },
+              "textToSpeech": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              },
+              "connectivity": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              },
+              "battery": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "filePicker": {
+      "className": "FilePickerModule",
+      "methods": {
+        "pickOne": {
+          "params": {
+            "kind": "object",
+            "name": "FilePickerPickArgs",
+            "fields": {
+              "title": {
+                "kind": "nullable",
+                "element": {
+                  "kind": "primitive",
+                  "tsType": "string"
+                }
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "FilePickerPickOneResult",
+            "fields": {
+              "file": {
+                "kind": "nullable",
+                "element": {
+                  "kind": "object",
+                  "name": "PickedFile",
+                  "fields": {
+                    "fileName": {
+                      "kind": "primitive",
+                      "tsType": "string"
+                    },
+                    "fullPath": {
+                      "kind": "primitive",
+                      "tsType": "string"
+                    },
+                    "contentType": {
+                      "kind": "nullable",
+                      "element": {
+                        "kind": "primitive",
+                        "tsType": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "pickMultiple": {
+          "params": {
+            "kind": "object",
+            "name": "FilePickerPickArgs",
+            "fields": {
+              "title": {
+                "kind": "nullable",
+                "element": {
+                  "kind": "primitive",
+                  "tsType": "string"
+                }
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "FilePickerPickMultipleResult",
+            "fields": {
+              "files": {
+                "kind": "array",
+                "element": {
+                  "kind": "object",
+                  "name": "PickedFile",
+                  "fields": {
+                    "fileName": {
+                      "kind": "primitive",
+                      "tsType": "string"
+                    },
+                    "fullPath": {
+                      "kind": "primitive",
+                      "tsType": "string"
+                    },
+                    "contentType": {
+                      "kind": "nullable",
+                      "element": {
+                        "kind": "primitive",
+                        "tsType": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "launcher": {
+      "className": "LauncherModule",
+      "methods": {
+        "open": {
+          "params": {
+            "kind": "object",
+            "name": "LauncherOpenArgs",
+            "fields": {
+              "uri": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "LauncherOpenResult",
+            "fields": {
+              "success": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          }
+        },
+        "canOpen": {
+          "params": {
+            "kind": "object",
+            "name": "LauncherCanOpenArgs",
+            "fields": {
+              "uri": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "LauncherCanOpenResult",
+            "fields": {
+              "canOpen": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "preferences": {
+      "className": "PreferencesModule",
+      "methods": {
+        "get": {
+          "params": {
+            "kind": "object",
+            "name": "PreferencesGetArgs",
+            "fields": {
+              "key": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "PreferencesGetResult",
+            "fields": {
+              "value": {
+                "kind": "nullable",
+                "element": {
+                  "kind": "primitive",
+                  "tsType": "string"
+                }
+              }
+            }
+          }
+        },
+        "set": {
+          "params": {
+            "kind": "object",
+            "name": "PreferencesSetArgs",
+            "fields": {
+              "key": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "value": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "PreferencesSetResult",
+            "fields": {
+              "success": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          }
+        },
+        "remove": {
+          "params": {
+            "kind": "object",
+            "name": "PreferencesRemoveArgs",
+            "fields": {
+              "key": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "PreferencesRemoveResult",
+            "fields": {
+              "success": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          }
+        },
+        "containsKey": {
+          "params": {
+            "kind": "object",
+            "name": "PreferencesContainsArgs",
+            "fields": {
+              "key": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "PreferencesContainsResult",
+            "fields": {
+              "exists": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          }
+        },
+        "clear": {
+          "returns": {
+            "kind": "object",
+            "name": "PreferencesClearResult",
+            "fields": {
+              "success": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "secureStorage": {
+      "className": "SecureStorageModule",
+      "methods": {
+        "get": {
+          "params": {
+            "kind": "object",
+            "name": "SecureStorageGetArgs",
+            "fields": {
+              "key": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "SecureStorageGetResult",
+            "fields": {
+              "value": {
+                "kind": "nullable",
+                "element": {
+                  "kind": "primitive",
+                  "tsType": "string"
+                }
+              }
+            }
+          }
+        },
+        "set": {
+          "params": {
+            "kind": "object",
+            "name": "SecureStorageSetArgs",
+            "fields": {
+              "key": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "value": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "SecureStorageSetResult",
+            "fields": {
+              "success": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          }
+        },
+        "remove": {
+          "params": {
+            "kind": "object",
+            "name": "SecureStorageRemoveArgs",
+            "fields": {
+              "key": {
+                "kind": "primitive",
+                "tsType": "string"
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "SecureStorageRemoveResult",
+            "fields": {
+              "removed": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          }
+        },
+        "removeAll": {
+          "returns": {
+            "kind": "object",
+            "name": "SecureStorageRemoveAllResult",
+            "fields": {
+              "success": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "share": {
+      "className": "ShareModule",
+      "methods": {
+        "shareText": {
+          "params": {
+            "kind": "object",
+            "name": "ShareTextArgs",
+            "fields": {
+              "text": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "title": {
+                "kind": "nullable",
+                "element": {
+                  "kind": "primitive",
+                  "tsType": "string"
+                }
+              },
+              "subject": {
+                "kind": "nullable",
+                "element": {
+                  "kind": "primitive",
+                  "tsType": "string"
+                }
+              },
+              "uri": {
+                "kind": "nullable",
+                "element": {
+                  "kind": "primitive",
+                  "tsType": "string"
+                }
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "ShareResult",
+            "fields": {
+              "success": {
+                "kind": "primitive",
+                "tsType": "boolean"
+              }
+            }
+          }
+        }
+      }
+    },
+    "textToSpeech": {
+      "className": "TextToSpeechModule",
+      "methods": {
+        "speak": {
+          "params": {
+            "kind": "object",
+            "name": "SpeakArgs",
+            "fields": {
+              "text": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "pitch": {
+                "kind": "nullable",
+                "element": {
+                  "kind": "primitive",
+                  "tsType": "number"
+                }
+              },
+              "volume": {
+                "kind": "nullable",
+                "element": {
+                  "kind": "primitive",
+                  "tsType": "number"
+                }
+              }
+            }
+          },
+          "returns": {
+            "kind": "object",
+            "name": "SpeakResult",
+            "fields": {
+              "success": {
+                "kind": "primitive",
+                "tsType": "boolean"
               }
             }
           }

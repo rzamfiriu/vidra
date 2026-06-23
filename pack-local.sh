@@ -32,6 +32,9 @@ dotnet pack "$SCRIPT_DIR/src/modules/Vidra.Modules.AppLifecycle/Vidra.Modules.Ap
 dotnet pack "$SCRIPT_DIR/src/modules/Vidra.Modules.Windowing/Vidra.Modules.Windowing.csproj" \
   -c Release -o "$OUT_DIR"
 
+dotnet pack "$SCRIPT_DIR/src/modules/Vidra.Modules.Essentials/Vidra.Modules.Essentials.csproj" \
+  -c Release -o "$OUT_DIR"
+
 dotnet pack "$SCRIPT_DIR/src/host/Vidra.Host.Maui.Core/Vidra.Host.Maui.Core.csproj" \
   -c Release -o "$OUT_DIR"
 

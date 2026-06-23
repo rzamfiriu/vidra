@@ -48,6 +48,24 @@ public sealed class BridgeSerializerTests
         parsed.GetProperty("data").GetProperty("text").GetString().Should().Be("hi");
         parsed.TryGetProperty("error", out _).Should().BeFalse("null error is omitted");
     }
+
+    public enum SampleAccess { None, ConstrainedInternet, Internet }
+
+    public record AccessHolder(SampleAccess Access);
+
+    [Fact]
+    public void Serialize_Writes_Enums_As_CamelCase_Strings()
+    {
+        var json = BridgeSerializer.Serialize(new AccessHolder(SampleAccess.ConstrainedInternet));
+        json.Should().Contain("\"access\":\"constrainedInternet\"");
+    }
+
+    [Fact]
+    public void Deserialize_Reads_CamelCase_Enum_Strings()
+    {
+        var holder = BridgeSerializer.Deserialize<AccessHolder>("{\"access\":\"constrainedInternet\"}");
+        holder!.Access.Should().Be(SampleAccess.ConstrainedInternet);
+    }
 }
 
 public sealed class JsonPayloadTests

@@ -27,6 +27,7 @@
     <ProjectReference Include="..\..\modules\Vidra.Modules.Notifications\Vidra.Modules.Notifications.csproj" />
     <ProjectReference Include="..\..\modules\Vidra.Modules.AppLifecycle\Vidra.Modules.AppLifecycle.csproj" />
     <ProjectReference Include="..\..\modules\Vidra.Modules.Windowing\Vidra.Modules.Windowing.csproj" />
+    <ProjectReference Include="..\..\modules\Vidra.Modules.Essentials\Vidra.Modules.Essentials.csproj" />
   </ItemGroup>
 
 </Project>

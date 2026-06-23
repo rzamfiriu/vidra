@@ -15,6 +15,13 @@ public sealed class BridgeDispatcher
         _modules[module.ModuleName] = module;
     }
 
+    /// <summary>
+    /// The registered modules, exposed so the host can wire cross-cutting
+    /// concerns such as attaching the JS callback channel to every
+    /// <see cref="IBridgeEventSource"/>.
+    /// </summary>
+    public IReadOnlyCollection<IBridgeModule> Modules => _modules.Values.ToList();
+
     public IReadOnlyDictionary<string, IReadOnlyList<string>> GetCapabilities()
     {
         var caps = new Dictionary<string, IReadOnlyList<string>>();

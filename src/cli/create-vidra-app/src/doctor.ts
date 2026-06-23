@@ -236,7 +236,7 @@ export const runDoctor = async (): Promise<number> => {
     console.log(
       footer(
         `${dim("all checks passed \u2014 you're ready to run")} ${lime(
-          "vidra dev",
+          "npm run dev",
         )}${dim(".")}`,
       ),
     );
@@ -251,7 +251,7 @@ export const runDoctor = async (): Promise<number> => {
         `${n} issue${n === 1 ? "" : "s"} found. apply the ${
           n === 1 ? "fix" : "fixes"
         } above, then re-run`,
-      )} ${lime("vidra doctor")}${dim(".")}`,
+      )} ${lime("npm run doctor")}${dim(".")}`,
     ),
   );
   console.log();

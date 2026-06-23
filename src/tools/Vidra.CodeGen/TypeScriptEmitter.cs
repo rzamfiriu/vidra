@@ -104,13 +104,25 @@ public sealed class TypeScriptEmitter
         {
             "primitive" => typeRef.TsType!,
             "nullable" => $"{TypeRefToTs(typeRef.Element!)} | null",
-            "array" => $"{TypeRefToTs(typeRef.Element!)}[]",
+            "array" => $"{ArrayElementToTs(typeRef.Element!)}[]",
             "enum" => string.Join(" | ", typeRef.Values!.Select(v => $"\"{ToCamelCase(v)}\"")),
             "object" when typeRef.Name is not null => typeRef.Name,
             "object" when typeRef.Fields is not null => InlineObject(typeRef.Fields),
             "record" => typeRef.Name ?? "unknown",
             _ => "unknown",
         };
+    }
+
+    /// <summary>
+    /// Renders an array's element type, wrapping union-producing elements
+    /// (enum string-unions, nullable <c>T | null</c>) in parentheses so the
+    /// trailing <c>[]</c> applies to the whole union rather than its last
+    /// member (e.g. <c>("a" | "b")[]</c>, not the invalid <c>"a" | "b"[]</c>).
+    /// </summary>
+    private string ArrayElementToTs(TypeRef element)
+    {
+        var ts = TypeRefToTs(element);
+        return element.Kind is "enum" or "nullable" ? $"({ts})" : ts;
     }
 
     private string InlineObject(Dictionary<string, TypeRef> fields)

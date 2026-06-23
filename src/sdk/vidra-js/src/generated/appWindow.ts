@@ -2,7 +2,7 @@
 import type { VidraClient } from "../singleton.js";
 
 export interface ConfigureWindowArgs {
-  title: string;
+  title?: string | null;
   width?: number | null;
   height?: number | null;
 }

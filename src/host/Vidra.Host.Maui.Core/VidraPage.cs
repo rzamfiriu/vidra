@@ -1,3 +1,4 @@
+using Vidra.Bridge;
 using Vidra.Modules.Windowing;
 
 namespace Vidra.Hosting;
@@ -27,6 +28,18 @@ public class VidraPage : ContentPage
         var appWindowService = IPlatformApplication.Current.Services.GetService<IAppWindowService>();
         appWindowService?.AttachCallbackChannel(Bridge);
         Loaded += (_, _) => appWindowService?.TrackPage(this);
+
+        // Give every event-emitting module a live channel to push events on.
+        // AttachCallbackChannel is idempotent, so re-creating the page is safe.
+        var dispatcher = IPlatformApplication.Current.Services.GetService<BridgeDispatcher>();
+        if (dispatcher is not null)
+        {
+            foreach (var module in dispatcher.Modules)
+            {
+                if (module is IBridgeEventSource eventSource)
+                    eventSource.AttachCallbackChannel(Bridge);
+            }
+        }
 
         LoadContent();
     }

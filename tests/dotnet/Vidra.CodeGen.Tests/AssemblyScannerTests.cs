@@ -57,6 +57,19 @@ public sealed class AssemblyScannerTests
     }
 
     [Fact]
+    public void Scan_Wraps_Nullable_Reference_Correctly()
+    {
+        var path = FixtureAssemblyPath();
+        var manifest = new AssemblyScanner(new[] { path }).Scan(new[] { path });
+
+        var returnsRef = manifest.Modules["sample"].Methods["echo"].Returns!;
+        var note = returnsRef.Fields!["note"];
+        note.Kind.Should().Be("nullable");
+        note.Element!.Kind.Should().Be("primitive");
+        note.Element.TsType.Should().Be("string");
+    }
+
+    [Fact]
     public void Scan_Resolves_Array_Types()
     {
         var path = FixtureAssemblyPath();

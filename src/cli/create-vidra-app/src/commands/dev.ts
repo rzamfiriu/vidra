@@ -54,9 +54,11 @@ export const devCommand = (argv: string[]): Promise<void> =>
 
 // `vidra run` builds and launches only the native host, without the Vite dev
 // server (use it when you're serving the UI separately). It launches the host
-// the same robust way `dev` does — a direct binary spawn on macOS — instead of
-// MSBuild's `-t:Run` target, which shells out to `open -a` and fails on locally
-// signed apps with a bare `MSB3073 ... exited with code 1`.
+// the same robust way `dev` does — build, then spawn the produced binary
+// directly — instead of MSBuild's `-t:Run` target, which on macOS shells out to
+// `open -a` and fails on locally signed apps, and on Windows execs an
+// unpackaged app whose native deps aren't laid out yet; both surface only as a
+// bare `MSB3073 ... exited with code N`.
 export const runCommand = (argv: string[]): Promise<void> =>
   startSession(argv, { vite: false });
 
@@ -200,7 +202,11 @@ class DevSession {
     return this.registerChild(vite, "ui", "Vite dev server");
   }
 
-  private launchMacosHost(): ChildProcess {
+  // Builds the MAUI host as a discrete step (a plain `dotnet build`, never
+  // MSBuild's `-t:Run`) so the per-OS launch paths can spawn the produced
+  // binary directly. `-t:Run` shells out in ways that break for both locally
+  // signed mac apps and unpackaged Windows apps (see the call sites).
+  private buildHostSync(): void {
     console.log(
       taggedRow(
         "active",
@@ -236,6 +242,10 @@ class DevSession {
       }
       process.exit(1);
     }
+  }
+
+  private launchMacosHost(): ChildProcess {
+    this.buildHostSync();
 
     const appBundle = findMacAppBundle(
       this.project.hostDir,
@@ -282,26 +292,44 @@ class DevSession {
     return this.registerChild(host, "host", path.basename(binary));
   }
 
+  // Build first, then spawn the produced .exe directly. A single
+  // `dotnet build -t:Run` on an unpackaged MAUI Windows app
+  // (`WindowsPackageType=None`) execs the binary before the WindowsAppSDK
+  // native assets are laid out beside it, so the app can't resolve its deps and
+  // dies with a bare `MSB3073 ... exited with code 3` (ERROR_PATH_NOT_FOUND —
+  // "The system cannot find the path specified"). Building as a discrete step
+  // and then launching the binary is the documented workaround.
+  // See dotnet/maui#13942 and dotnet/maui#5975.
   private launchWindowsHost(): ChildProcess {
-    console.log(taggedRow("active", "host", dim("launching\u2026")));
-    const host = spawn(
-      DOTNET_COMMAND,
-      [
-        "build",
-        "-t:Run",
-        "-c",
-        this.buildConfig,
-        "-f",
-        this.target.framework,
-        this.project.csprojPath,
-      ],
-      {
-        cwd: this.project.root,
-        stdio: ["ignore", "pipe", "pipe"],
-        env: { ...process.env, VIDRA_DEV_URL: this.viteUrl },
-      },
+    this.buildHostSync();
+
+    const exe = findWindowsExecutable(
+      this.project.hostDir,
+      this.project.csprojPath,
+      this.target.framework,
+      this.buildConfig,
     );
-    return this.registerChild(host, "host", "MAUI host");
+    if (!exe) {
+      console.error(
+        row({
+          glyph: "error",
+          detail: dim(
+            `could not find the host .exe under ${path.join(this.project.hostDir, "bin", this.buildConfig, this.target.framework)}`,
+          ),
+        }),
+      );
+      process.exit(1);
+    }
+
+    console.log(
+      taggedRow("done", "host", `${dim("launched")} ${value(path.basename(exe))}`),
+    );
+    const host = spawn(exe, [], {
+      cwd: path.dirname(exe),
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, VIDRA_DEV_URL: this.viteUrl },
+    });
+    return this.registerChild(host, "host", path.basename(exe));
   }
 
   private registerChild(
@@ -479,6 +507,51 @@ const findMacExecutable = (appBundle: string): string | null => {
   for (const entry of fs.readdirSync(macOsDir, { withFileTypes: true })) {
     if (entry.isFile()) {
       return path.join(macOsDir, entry.name);
+    }
+  }
+
+  return null;
+};
+
+const findWindowsExecutable = (
+  hostDir: string,
+  csprojPath: string,
+  framework: string,
+  buildConfig: string,
+): string | null => {
+  const outputDir = path.join(hostDir, "bin", buildConfig, framework);
+  if (!fs.existsSync(outputDir)) return null;
+
+  // The build emits `<AssemblyName>.exe` — the csproj base name, e.g.
+  // `MyApp.Host.exe` — inside a RID subfolder whose name varies by SDK
+  // (`win-x64`, `win10-x64`, `win-arm64`, …). Search recursively, preferring an
+  // exact name match before falling back to any host/`.exe`.
+  const exeName = `${path.basename(csprojPath, ".csproj")}.exe`.toLowerCase();
+  return (
+    findFileRecursive(outputDir, (name) => name.toLowerCase() === exeName) ??
+    findFileRecursive(outputDir, (name) =>
+      name.toLowerCase().endsWith(".host.exe"),
+    ) ??
+    findFileRecursive(outputDir, (name) => name.toLowerCase().endsWith(".exe"))
+  );
+};
+
+const findFileRecursive = (
+  dir: string,
+  match: (name: string) => boolean,
+): string | null => {
+  if (!fs.existsSync(dir)) return null;
+
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isFile() && match(entry.name)) {
+      return path.join(dir, entry.name);
+    }
+  }
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      const found = findFileRecursive(path.join(dir, entry.name), match);
+      if (found) return found;
     }
   }
 

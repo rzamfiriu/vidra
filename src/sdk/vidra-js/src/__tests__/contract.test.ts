@@ -11,6 +11,7 @@ import type {
   ReverseResponse,
 } from "../types.js";
 import type { Transport } from "../transport.js";
+import type { ConnectivityStatus } from "../generated/connectivity.js";
 
 const FIXTURE_DIR = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -90,6 +91,22 @@ describe("Bridge contract fixtures (SDK side)", () => {
     (window as any).__vidra_onevent(event);
 
     expect(received).toEqual([event.data]);
+  });
+
+  it("delivers connectivity.changed enum event matching the generated type", () => {
+    const received: ConnectivityStatus[] = [];
+    client.on<ConnectivityStatus>("connectivity.changed", (d) => received.push(d));
+
+    const event = readFixture("event.connectivity_changed.json") as BridgeEvent;
+    (window as any).__vidra_onevent(event);
+
+    // The typed literal makes tsc verify the fixture's enum strings are valid
+    // members of the generated string-union types (guards enum wire drift).
+    const expected: ConnectivityStatus = {
+      access: "internet",
+      profiles: ["wifi", "ethernet"],
+    };
+    expect(received).toEqual([expected]);
   });
 
   it("reverse.success.request.json is handled and produces a success response", async () => {

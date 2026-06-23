@@ -70,9 +70,10 @@ public sealed class AppWindowBridgeTests
         data.GetProperty("title").GetString().Should().Be("Example");
         data.GetProperty("width").GetDouble().Should().Be(1280);
         data.GetProperty("height").GetDouble().Should().Be(720);
-        // BridgeSerializer does not register JsonStringEnumConverter, so
-        // WindowState round-trips as its numeric enum value.
-        data.GetProperty("state").GetInt32().Should().Be((int)WindowState.Maximized);
+        // BridgeSerializer registers JsonStringEnumConverter(CamelCase), so
+        // WindowState crosses the wire as the camelCase string union member
+        // that the generated TypeScript proxy declares.
+        data.GetProperty("state").GetString().Should().Be("maximized");
     }
 
     [Fact]

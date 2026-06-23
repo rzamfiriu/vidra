@@ -88,6 +88,16 @@ public sealed class TypeScriptEmitterTests
     }
 
     [Fact]
+    public void EmitModule_Parenthesizes_Enum_Arrays()
+    {
+        var manifest = ScanFixture();
+        var emitter = new TypeScriptEmitter();
+
+        var output = emitter.EmitModule("sample", manifest.Modules["sample"]);
+        output.Should().Contain("moods: (\"happy\" | \"neutral\" | \"sad\")[]");
+    }
+
+    [Fact]
     public void EmitModule_Uses_Custom_Sdk_Import()
     {
         var manifest = ScanFixture();

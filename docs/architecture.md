@@ -16,7 +16,7 @@ flowchart TB
     subgraph NET[".NET MAUI host (C#)"]
         HOSTWV["WebView host · VidraPage"]
         DISP["BridgeDispatcher"]
-        MODS["Modules<br/>filesystem · dialogs · clipboard<br/>notifications · app · appWindow"]
+        MODS["Modules<br/>filesystem · dialogs · clipboard · notifications · app · appWindow<br/>+ MAUI Essentials"]
         HOSTWV --> DISP --> MODS
     end
 
@@ -85,7 +85,7 @@ Native modules implement `IBridgeModule` and are registered in `MauiProgram.cs`.
 
 The TypeScript SDK (`@vidra-dev/sdk`) wraps the transport layer and exposes `invoke()`, `on()`, and `capabilities()`. It auto-detects whether it is running inside a native host or a plain browser and falls back to console logging in browser-only mode.
 
-On top of the low-level `invoke()`, the SDK ships **generated, typed proxies** for each built-in module (`filesystem`, `dialogs`, `clipboard`, `notifications`, `appWindow`, `app`). These are emitted by `vidra-codegen` from the C# module definitions, so the JS argument and result types stay in lockstep with the native contract. See [Type Safety & Codegen](#type-safety--codegen).
+On top of the low-level `invoke()`, the SDK ships **generated, typed proxies** for each built-in module (`filesystem`, `dialogs`, `clipboard`, `notifications`, `appWindow`, `app`) plus the MAUI Essentials modules (`secureStorage`, `preferences`, `device`, `share`, `browser`, `launcher`, `email`, `filePicker`, `textToSpeech`, `connectivity`, `battery`, `essentials`). These are emitted by `vidra-codegen` from the C# module definitions, so the JS argument and result types stay in lockstep with the native contract (see the full list in [capabilities.md](./capabilities.md)). Event-emitting modules (`connectivity`, `battery`) implement `IBridgeEventSource` and are attached to the JS callback channel by `VidraPage`. See [Type Safety & Codegen](#type-safety--codegen).
 
 ## Type Safety & Codegen
 
@@ -118,8 +118,10 @@ C# types map to idiomatic TypeScript:
 | `bool` | `boolean` |
 | `T[]`, `List<T>`, `IReadOnlyList<T>` | `T[]` |
 | `Dictionary<string, T>` | `Record<string, T>` |
-| `enum` | string-literal union (e.g. `"restored" \| "maximized"`) |
-| `Nullable<T>` | optional `T \| null` |
+| `enum` | camelCase string-literal union (e.g. `"restored" \| "maximized"`) |
+| `enum[]` | parenthesized union array (e.g. `("wifi" \| "ethernet")[]`) |
+| `Nullable<T>` (e.g. `int?`) | optional `T \| null` |
+| nullable reference (e.g. `string?`, `Foo?`) | optional `T \| null` |
 
 The generated proxy turns the records above into:
 
@@ -133,5 +135,7 @@ export class FilesystemProxy {
   }
 }
 ```
+
+Enums cross the wire as their **camelCase string name**, not a numeric value: the runtime serializer registers `JsonStringEnumConverter(JsonNamingPolicy.CamelCase)` so the actual JSON matches the generated string-literal unions. Nullable values (`int?`, `string?`) are omitted from the JSON when null, which the emitter reflects as optional `field?: T | null`.
 
 Generation runs automatically on build via the `Vidra.CodeGen.targets` MSBuild target (`AfterTargets="Build"`), so the SDK's `src/generated/` proxies stay in sync with the native modules. Because both sides derive from the same definitions, JS and C# can't silently drift; the emitted output is additionally pinned by snapshot tests (see [testing.md](./testing.md)).

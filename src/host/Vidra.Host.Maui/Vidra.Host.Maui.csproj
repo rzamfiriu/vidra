@@ -58,6 +58,7 @@
       <VidraModuleAssembly Include="$(VidraModulesDir)\Vidra.Modules.Notifications\bin\$(Configuration)\$(TargetFramework)\Vidra.Modules.Notifications.dll" />
       <VidraModuleAssembly Include="$(VidraModulesDir)\Vidra.Modules.AppLifecycle\bin\$(Configuration)\$(TargetFramework)\Vidra.Modules.AppLifecycle.dll" />
       <VidraModuleAssembly Include="$(VidraModulesDir)\Vidra.Modules.Windowing\bin\$(Configuration)\$(TargetFramework)\Vidra.Modules.Windowing.dll" />
+      <VidraModuleAssembly Include="$(VidraModulesDir)\Vidra.Modules.Essentials\bin\$(Configuration)\$(TargetFramework)\Vidra.Modules.Essentials.dll" />
     </ItemGroup>
 
     <Message Importance="high" Text="[Vidra] Generating TypeScript proxies..." />
