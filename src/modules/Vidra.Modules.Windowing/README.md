@@ -1,6 +1,6 @@
 # Vidra Windowing Module
 
-`Vidra.Modules.Windowing` provides primary-window management for Vidra desktop apps.
+`Vidra.Modules.Windowing` provides primary-window management for [Vidra](https://vidra.build) desktop apps.
 
 ## Supported platforms
 
@@ -114,3 +114,9 @@ Not included yet:
 - always-on-top
 - transparency
 - custom title bar chrome
+
+## Links
+
+- Website: [vidra.build](https://vidra.build)
+- GitHub: [rzamfiriu/vidra](https://github.com/rzamfiriu/vidra)
+- NuGet: [Vidra.Modules.Windowing](https://www.nuget.org/packages/Vidra.Modules.Windowing)
