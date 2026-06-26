@@ -1,6 +1,6 @@
 # Vidra Notifications Module
 
-`Vidra.Modules.Notifications` provides local notification support for Vidra apps.
+`Vidra.Modules.Notifications` provides local notification support for [Vidra](https://vidra.build) apps.
 
 ## Supported platforms
 
@@ -70,3 +70,9 @@ Without a valid Apple development signing identity, local notification permissio
 ```bash
 security find-identity -v -p codesigning
 ```
+
+## Links
+
+- Website: [vidra.build](https://vidra.build)
+- GitHub: [rzamfiriu/vidra](https://github.com/rzamfiriu/vidra)
+- NuGet: [Vidra.Modules.Notifications](https://www.nuget.org/packages/Vidra.Modules.Notifications)

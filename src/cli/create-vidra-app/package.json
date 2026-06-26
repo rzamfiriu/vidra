@@ -41,7 +41,7 @@
     "url": "git+https://github.com/rzamfiriu/vidra.git",
     "directory": "src/cli/create-vidra-app"
   },
-  "homepage": "https://github.com/rzamfiriu/vidra#readme",
+  "homepage": "https://vidra.build",
   "bugs": {
     "url": "https://github.com/rzamfiriu/vidra/issues"
   },

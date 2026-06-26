@@ -1,6 +1,6 @@
 # {{appTitle}}
 
-A cross-platform application built with [Vidra](https://github.com/user/vidra) — React UI + .NET MAUI native host.
+A cross-platform application built with [Vidra](https://vidra.build) — React UI + .NET MAUI native host.
 
 ## Getting Started
 
@@ -69,3 +69,7 @@ npm run build
     ├── vite.config.ts
     └── package.json
 ```
+
+---
+
+Built with [Vidra](https://vidra.build) — a C#/.NET native core with a web UI.

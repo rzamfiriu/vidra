@@ -11,7 +11,7 @@
     <Product>Vidra</Product>
     <Copyright>Copyright © rzamfiriu</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/rzamfiriu/vidra</PackageProjectUrl>
+    <PackageProjectUrl>https://vidra.build</PackageProjectUrl>
     <RepositoryUrl>https://github.com/rzamfiriu/vidra.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageTags>vidra;maui;webview;react;desktop;cross-platform</PackageTags>

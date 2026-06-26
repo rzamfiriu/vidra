@@ -1,6 +1,6 @@
 # create-vidra-app
 
-Scaffold a new [Vidra](https://github.com/rzamfiriu/vidra) application — a
+Scaffold a new [Vidra](https://vidra.build) application — a
 **React UI + .NET MAUI native host**, shipped from a single codebase.
 
 > **Alpha.** APIs and templates may change between 0.x releases.
@@ -42,6 +42,12 @@ npx vidra build --target macos  # build + package a macOS .dmg
 If the MAUI workload is missing, `create-vidra-app` will detect it after
 scaffolding and offer to install it for you. You can re-check at any time with
 `npm run doctor`. 
+
+## Links
+
+- Website: [vidra.build](https://vidra.build)
+- GitHub: [rzamfiriu/vidra](https://github.com/rzamfiriu/vidra)
+- npm: [create-vidra-app](https://www.npmjs.com/package/create-vidra-app)
 
 ## License
 
