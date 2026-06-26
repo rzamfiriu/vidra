@@ -11,7 +11,7 @@ import {
   toTextPath,
   parseArgs,
 } from "./utils.js";
-import { exec, tryExec } from "./exec.js";
+import { exec, tryExecAsync } from "./exec.js";
 import { scaffoldDir, type Replacements } from "./scaffold.js";
 import { ensureMauiWorkload } from "./doctor.js";
 import { dim, footer, kv, lime, row, value, wordmark } from "./theme.js";
@@ -153,10 +153,13 @@ const main = async (): Promise<void> => {
   console.log(row({ glyph: "active", detail: dim("installing dependencies\u2026") }));
   // The root install provides the `vidra` CLI binary (via the create-vidra-app
   // devDependency) that the `dev`/`build` scripts call; the ui install provides
-  // React/Vite/@vidra-dev/sdk. They are separate package roots, not workspaces.
+  // React/Vite/@vidra-dev/sdk. They are separate package roots, not workspaces,
+  // so the two installs are independent and run concurrently.
   const uiDir = path.join(root, "ui");
-  const rootNpmOk = tryExec("npm install", root);
-  const uiNpmOk = tryExec("npm install", uiDir);
+  const [rootNpmOk, uiNpmOk] = await Promise.all([
+    tryExecAsync("npm install", root),
+    tryExecAsync("npm install", uiDir),
+  ]);
   const npmOk = rootNpmOk && uiNpmOk;
 
   console.log();

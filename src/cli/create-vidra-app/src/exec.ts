@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { dim, row } from "./theme.js";
 
 const toText = (value: Buffer | string | undefined): string => {
@@ -56,11 +56,17 @@ export const exec = (cmd: string, cwd: string): void => {
   }
 };
 
-export const tryExec = (cmd: string, cwd: string): boolean => {
-  try {
-    execSync(cmd, { cwd, stdio: "pipe" });
-    return true;
-  } catch {
-    return false;
-  }
-};
+/**
+ * Async, non-throwing variant of {@link exec}. Resolves `true` on a clean exit
+ * and `false` on any failure (non-zero exit or spawn error), mirroring the
+ * "swallow the error, report a boolean" contract callers rely on. Output is
+ * discarded (`stdio: "ignore"`), so running several of these concurrently
+ * neither garbles the console nor risks the `maxBuffer` overflow that buffering
+ * a chatty `npm install` through a pipe would.
+ */
+export const tryExecAsync = (cmd: string, cwd: string): Promise<boolean> =>
+  new Promise((resolve) => {
+    const child = spawn(cmd, { cwd, stdio: "ignore", shell: true });
+    child.on("error", () => resolve(false));
+    child.on("close", (code) => resolve(code === 0));
+  });
