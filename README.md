@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src=".github/assets/vidra-logo-green.png" alt="Vidra" width="320">
+[<img src=".github/assets/vidra-logo-green.png" alt="Vidra" width="320">](https://vidra.build.com)
 
 **Build cross-platform desktop apps with React, Vue, or Svelte on a C#/.NET native layer.**
 
