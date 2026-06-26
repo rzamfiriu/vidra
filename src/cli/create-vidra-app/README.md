@@ -41,7 +41,7 @@ npx vidra build --target macos  # build + package a macOS .dmg
 
 If the MAUI workload is missing, `create-vidra-app` will detect it after
 scaffolding and offer to install it for you. You can re-check at any time with
-`npm run doctor`.
+`npm run doctor`. 
 
 ## License
 
