@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { app, appWindow, clipboard, notifications, vidra } from "@vidra-dev/sdk";
+import { type MouseEvent, useEffect, useRef, useState } from "react";
+import { app, appWindow, browser, clipboard, notifications, vidra } from "@vidra-dev/sdk";
 import type { WindowInfo, WindowSupport } from "@vidra-dev/sdk";
 
 const describeWindow = (windowInfo: WindowInfo): string => {
@@ -172,6 +172,18 @@ const App = () => {
     }
   };
 
+  const handleOpenVidraSite = async (
+    event: MouseEvent<HTMLAnchorElement>,
+  ) => {
+    // Open in the user's default browser instead of navigating the webview.
+    event.preventDefault();
+    try {
+      await browser.open({ url: "https://vidra.build", mode: "external" });
+    } catch (error: unknown) {
+      setInfo(`Error: ${formatError(error)}`);
+    }
+  };
+
   const showsAdvancedWindowActions =
     !!windowSupport &&
     (windowSupport.center ||
@@ -254,9 +266,10 @@ const App = () => {
         <footer className="footer">
           Built with{" "}
           <a
-            href="https://github.com/rzamfiriu/vidra"
+            href="https://vidra.dev"
             target="_blank"
             rel="noreferrer"
+            onClick={handleOpenVidraSite}
           >
             Vidra
           </a>
