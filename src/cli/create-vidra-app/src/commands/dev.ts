@@ -102,11 +102,10 @@ const startSession = async (
     process.exit(1);
   }
 
-  // On workload sets that predate Mac Catalyst dotnet-watch support, `dotnet
-  // watch` launches the app but silently never applies deltas or restarts —
-  // it doesn't fail, so this can't be detected from the session itself.
-  // Probe up-front and use the classic launch instead of lying about hot
-  // reload being active.
+  // Some toolchains can't hot reload Mac Catalyst apps and fail in ways the
+  // session can't detect (silent no-op deltas on old workload sets, an app
+  // that crashes on launch under the 10.0.2xx watcher). Probe up-front and
+  // use the classic launch instead of lying about hot reload being active.
   if (hotReload && target.name === "macos") {
     const blocker = macCatalystHotReloadBlocker();
     if (blocker) {
@@ -115,10 +114,10 @@ const startSession = async (
       console.log(
         row({
           glyph: "manual",
-          detail: `${dim("C# hot reload needs workload set 10.0.203+ \u2014 found")} ${value(blocker)}${dim("; using a classic launch")}`,
+          detail: `${dim(blocker.reason + "; using a classic launch")}`,
         }),
       );
-      console.log(fixLine("dotnet workload update"));
+      console.log(fixLine(blocker.fix));
     }
   }
 
@@ -447,10 +446,20 @@ class DevSession {
           `${dim("launched")} ${value(this.project.projectName)} ${dim("\u2014 C# hot reload active")}`,
         ),
       );
-    } else if (event === "appWaiting" && !this.shuttingDown) {
-      // The app is gone (window closed, crash, or a failed rebuild after a
-      // rude edit). dotnet watch stays alive and relaunches on the next save,
-      // so keep the session open instead of tearing everything down.
+      return;
+    }
+
+    // Both remaining events mean dotnet watch has gone idle without a running
+    // app; it stays alive and retries on the next save. Which message the
+    // watcher prints varies by SDK: after a failed build, .NET 10.0.2xx says
+    // "Waiting for a file to change" (same as after an app exit) while
+    // 10.0.3xx says "Fix the error to continue" — so both must take the
+    // environment-hint path below, keyed on whether the app ever launched.
+    if ((event !== "appWaiting" && event !== "buildBlocked") || this.shuttingDown) {
+      return;
+    }
+
+    if (this.watchReady) {
       console.log(
         taggedRow(
           "manual",
@@ -458,23 +467,38 @@ class DevSession {
           dim("app not running \u2014 save a C# file to relaunch, or ctrl-c to stop"),
         ),
       );
-    } else if (event === "buildBlocked" && !this.shuttingDown) {
-      if (!this.watchReady) {
-        // The very first build failed, so this may be an environment problem
-        // rather than a code error; surface the usual targeted hints. dotnet
-        // watch keeps waiting, and a save retries the build.
-        if (looksLikeMissingWorkload(this.watchOutputTail)) printWorkloadHint();
-        else if (looksLikeXcodeTooOld(this.watchOutputTail)) printXcodeTooOldHint();
-        else if (looksLikeMissingXcode(this.watchOutputTail)) printXcodeHint();
-      }
+      return;
+    }
+
+    // Idle before readiness was ever confirmed. Usually the initial build
+    // failed — often an environment problem with a well-known fix, so surface
+    // the targeted hint. But the app may also have launched and exited before
+    // printing the readiness sentinel (e.g. an immediate crash), which is not
+    // a build failure; don't claim one unless the output shows it.
+    if (!/Build FAILED/i.test(this.watchOutputTail)) {
       console.log(
         taggedRow(
           "manual",
           "host",
-          dim("build failed \u2014 fix the error and save to retry, or ctrl-c to stop"),
+          dim(
+            "app exited before it was ready \u2014 save a C# file to relaunch, or ctrl-c to stop",
+          ),
         ),
       );
+      return;
     }
+
+    if (looksLikeMissingWorkload(this.watchOutputTail)) printWorkloadHint();
+    else if (looksLikeXcodeTooOld(this.watchOutputTail)) printXcodeTooOldHint();
+    else if (looksLikeMissingXcode(this.watchOutputTail)) printXcodeHint();
+
+    console.log(
+      taggedRow(
+        "manual",
+        "host",
+        dim("build failed \u2014 fix the error and save to retry, or ctrl-c to stop"),
+      ),
+    );
   }
 
   /**

@@ -8,6 +8,7 @@ import {
   looksLikeXcodeTooOld,
   workloadSetVersion,
   workloadSetSupportsCSharpHotReload,
+  sdkSupportsCSharpHotReload,
 } from "../doctor.js";
 
 describe("hasNet10Sdk", () => {
@@ -132,6 +133,24 @@ describe("workloadSetSupportsCSharpHotReload", () => {
   it("rejects unparseable versions", () => {
     expect(workloadSetSupportsCSharpHotReload("unknown")).toBe(false);
   });
+});
+
+describe("sdkSupportsCSharpHotReload", () => {
+  // The 10.0.2xx watcher's startup hook crashes Mac Catalyst apps on launch;
+  // the fix pairs with the 10.0.3xx feature band.
+  it.each(["10.0.300", "10.0.301", "10.1.100", "11.0.100"])(
+    "accepts %s",
+    (version) => {
+      expect(sdkSupportsCSharpHotReload(version)).toBe(true);
+    },
+  );
+
+  it.each(["10.0.201", "10.0.204", "10.0.100", "9.0.304", "8.0.411"])(
+    "rejects %s",
+    (version) => {
+      expect(sdkSupportsCSharpHotReload(version)).toBe(false);
+    },
+  );
 });
 
 describe("looksLikeMissingXcode", () => {

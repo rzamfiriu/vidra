@@ -107,6 +107,8 @@ export const workloadSetVersion = (
  */
 const MIN_MACCATALYST_WATCH_WORKLOAD_SET = [10, 0, 203];
 
+const MIN_MACCATALYST_WATCH_SDK = [10, 0, 300];
+
 /**
  * Compares the leading dotted segments of `version` against `minimum`. Missing
  * segments read as 0, and a non-numeric leading segment (e.g. "unknown") fails
@@ -131,21 +133,39 @@ const meetsMinimumVersion = (
 export const workloadSetSupportsCSharpHotReload = (version: string): boolean =>
   meetsMinimumVersion(version, MIN_MACCATALYST_WATCH_WORKLOAD_SET);
 
+/** True when the .NET SDK's `dotnet watch` can hot reload Mac Catalyst apps. */
+export const sdkSupportsCSharpHotReload = (version: string): boolean =>
+  meetsMinimumVersion(version, MIN_MACCATALYST_WATCH_SDK);
+
+export interface HotReloadBlocker {
+  /** Which requirement failed, with a ready-to-print explanation. */
+  reason: string;
+  fix: string;
+}
+
 /**
  * Environment probe for the dev command: is C# hot reload usable for Mac
- * Catalyst here? On older workload sets `dotnet watch` still launches the app
- * but silently never applies deltas (the hot reload startup hook only works
- * from macios 26.4 / workload set 10.0.203), so `vidra dev` must decide
- * up-front rather than trust the session to fail. Returns the blocking
- * workload set version when unsupported, null when supported or undeterminable
- * (let the watch session try).
+
  */
-export const macCatalystHotReloadBlocker = (): string | null => {
+export const macCatalystHotReloadBlocker = (): HotReloadBlocker | null => {
+  const sdkRes = run(DOTNET, ["--version"]);
+  if (!sdkRes.found) return null;
+  const sdkVersion = sdkRes.stdout.trim();
+  if (sdkVersion && !sdkSupportsCSharpHotReload(sdkVersion)) {
+    return {
+      reason: `C# hot reload needs the .NET SDK 10.0.300+ \u2014 found ${sdkVersion}`,
+      fix: INSTALL_NET_10_FIX,
+    };
+  }
+
   const res = run(DOTNET, ["workload", "list"]);
   if (!res.found) return null;
   const version = workloadSetVersion(res.stdout);
-  if (!version) return null;
-  return workloadSetSupportsCSharpHotReload(version) ? null : version;
+  if (!version || workloadSetSupportsCSharpHotReload(version)) return null;
+  return {
+    reason: `C# hot reload needs workload set 10.0.203+ \u2014 found ${version}`,
+    fix: "dotnet workload update",
+  };
 };
 
 // --- Build-output signatures -------------------------------------------------
@@ -259,6 +279,15 @@ const checkCSharpHotReload = (workloadList: RunResult | null): Requirement => {
   }
   if (process.platform !== "darwin") {
     return { name, status: "ok", detail: "dotnet watch supported" };
+  }
+  const sdkVersion = run(DOTNET, ["--version"]).stdout.trim();
+  if (sdkVersion && !sdkSupportsCSharpHotReload(sdkVersion)) {
+    return {
+      name,
+      status: "unknown",
+      detail: `SDK ${sdkVersion} \u2014 its dotnet-watch crashes Mac Catalyst apps on launch (needs 10.0.300+) \u2014 vidra dev falls back to a classic launch`,
+      fix: INSTALL_NET_10_FIX,
+    };
   }
   const version = workloadSetVersion(workloadList.stdout);
   if (!version) {
