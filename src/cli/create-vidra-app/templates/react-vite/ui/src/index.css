@@ -146,6 +146,22 @@ body::before {
   box-shadow: 0 0 0 3px var(--dot-glow);
 }
 
+/* Flashes when the native host hot reloads edited C# (vidra.hotReloaded). */
+.reload-badge {
+  margin-left: 0.5rem;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  animation: reload-pop 0.25s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@keyframes reload-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+
 .title {
   margin-top: 1.1rem;
   font-size: clamp(2.4rem, 6vw, 3.4rem);

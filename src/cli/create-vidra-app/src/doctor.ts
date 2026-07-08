@@ -7,6 +7,10 @@ const DOTNET = process.platform === "win32" ? "dotnet.exe" : "dotnet";
 const MAUI_DOCS =
   "https://learn.microsoft.com/dotnet/maui/get-started/installation";
 
+/** Fix shown whenever a suitable .NET SDK is absent (reused across checks). */
+const INSTALL_NET_10_FIX =
+  "Install the .NET 10 SDK — https://dotnet.microsoft.com/download";
+
 export type RequirementStatus = "ok" | "missing" | "unknown";
 
 export interface Requirement {
@@ -50,18 +54,37 @@ const run = (cmd: string, args: string[]): RunResult => {
   }
 };
 
+// --- Text scanning helpers ---------------------------------------------------
+
+const splitLines = (text: string): string[] => text.split(/\r?\n/);
+
+/** True when `text` matches at least one of the patterns. */
+const matchesAny = (text: string, patterns: readonly RegExp[]): boolean =>
+  patterns.some((pattern) => pattern.test(text));
+
+/** A 10.x version at the start of a `dotnet --list-sdks` line. */
+const NET_10_VERSION = /^10\./;
+
+/** The version on the "Workload version: X" line of `dotnet workload list`. */
+const WORKLOAD_SET_VERSION_LINE = /Workload version:\s*([\w.-]+)/i;
+
+/** A MAUI workload row in `dotnet workload list`. */
+const MAUI_WORKLOAD = /\bmaui\b/i;
+
+/** `xcode-select -p` pointing at the Command Line Tools, not a full Xcode.app. */
+const COMMAND_LINE_TOOLS_PATH = /CommandLineTools/i;
+
 // --- Pure helpers (unit-tested without invoking the toolchain) ---------------
 
 /** True when `dotnet --list-sdks` reports at least one 10.x SDK. */
 export const hasNet10Sdk = (listSdksOutput: string): boolean =>
-  listSdksOutput.split(/\r?\n/).some((line) => /^10\./.test(line.trim()));
+  splitLines(listSdksOutput).some((line) => NET_10_VERSION.test(line.trim()));
 
 /** Newest 10.x SDK version string from `dotnet --list-sdks`, if any. */
 export const newestNet10Sdk = (listSdksOutput: string): string | undefined =>
-  listSdksOutput
-    .split(/\r?\n/)
+  splitLines(listSdksOutput)
     .map((line) => line.trim().split(/\s+/)[0])
-    .filter((v) => /^10\./.test(v))
+    .filter((version) => NET_10_VERSION.test(version))
     .sort((a, b) =>
       a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }),
     )
@@ -69,112 +92,215 @@ export const newestNet10Sdk = (listSdksOutput: string): string | undefined =>
 
 /** True when `dotnet workload list` output contains a MAUI workload row. */
 export const outputMentionsMaui = (workloadListOutput: string): boolean =>
-  /\bmaui\b/i.test(workloadListOutput);
+  MAUI_WORKLOAD.test(workloadListOutput);
+
+/** Workload set version from `dotnet workload list` ("Workload version: 10.0.201"). */
+export const workloadSetVersion = (
+  workloadListOutput: string,
+): string | undefined =>
+  workloadListOutput.match(WORKLOAD_SET_VERSION_LINE)?.[1];
+
+/**
+ * Minimum workload set whose Mac Catalyst SDK supports `dotnet run` /
+ * `dotnet watch` (shipped with the macios "Xcode 26.4" release in workload
+ * set 10.0.203). Older sets make `vidra dev` fall back to a classic launch.
+ */
+const MIN_MACCATALYST_WATCH_WORKLOAD_SET = [10, 0, 203];
+
+/**
+ * Compares the leading dotted segments of `version` against `minimum`. Missing
+ * segments read as 0, and a non-numeric leading segment (e.g. "unknown") fails
+ * closed. Segments beyond `minimum`'s length are ignored, so "10.0.203.1"
+ * satisfies a 10.0.203 minimum.
+ */
+const meetsMinimumVersion = (
+  version: string,
+  minimum: readonly number[],
+): boolean => {
+  const segments = version.split(".").map((s) => Number.parseInt(s, 10));
+  if (segments.slice(0, minimum.length).some(Number.isNaN)) return false;
+
+  for (let i = 0; i < minimum.length; i++) {
+    const segment = segments[i] ?? 0;
+    if (segment !== minimum[i]) return segment > minimum[i];
+  }
+  return true;
+};
+
+/** True when the workload set is new enough for C# hot reload on Mac Catalyst. */
+export const workloadSetSupportsCSharpHotReload = (version: string): boolean =>
+  meetsMinimumVersion(version, MIN_MACCATALYST_WATCH_WORKLOAD_SET);
+
+/**
+ * Environment probe for the dev command: is C# hot reload usable for Mac
+ * Catalyst here? On older workload sets `dotnet watch` still launches the app
+ * but silently never applies deltas (the hot reload startup hook only works
+ * from macios 26.4 / workload set 10.0.203), so `vidra dev` must decide
+ * up-front rather than trust the session to fail. Returns the blocking
+ * workload set version when unsupported, null when supported or undeterminable
+ * (let the watch session try).
+ */
+export const macCatalystHotReloadBlocker = (): string | null => {
+  const res = run(DOTNET, ["workload", "list"]);
+  if (!res.found) return null;
+  const version = workloadSetVersion(res.stdout);
+  if (!version) return null;
+  return workloadSetSupportsCSharpHotReload(version) ? null : version;
+};
+
+// --- Build-output signatures -------------------------------------------------
+//
+// A plain `dotnet build` (run by `vidra dev` and the scaffolder) can fail for
+// environmental reasons that have well-known fixes. Rather than dump raw
+// MSBuild output at the user, we scan it for these signatures and print a
+// targeted hint. Each list collects the phrasings seen across SDK versions.
+
+/** The MAUI workload isn't installed (NETSDK1147 + workload-restore guidance). */
+const MISSING_WORKLOAD_SIGNATURES: readonly RegExp[] = [
+  /NETSDK1147/i,
+  /workloads?\s+must\s+be\s+installed/i,
+  /maui-maccatalyst/i,
+  /maui-windows/i,
+  /to\s+install\s+the\s+.*workload/i,
+];
+
+/**
+ * Full Xcode.app is missing. Mac Catalyst builds need it, not just the Command
+ * Line Tools, and fail this way from Xamarin.Shared.targets when
+ * `xcode-select -p` points at the CLT.
+ */
+const MISSING_XCODE_SIGNATURES: readonly RegExp[] = [
+  /valid\s+Xcode\s+installation\s+was\s+not\s+found/i,
+  /could\s+not\s+find\s+a\s+valid\s+Xcode\s+app\s+bundle/i,
+  /macios-missing-xcode/i,
+];
+
+/**
+ * The installed Xcode is older than the platform SDK the MAUI workload tracks.
+ * Surfaces as MT0180 from the macios linker Setup step ("requires the
+ * MacCatalyst X SDK (shipped with Xcode Y)").
+ */
+const OUTDATED_XCODE_SIGNATURES: readonly RegExp[] = [
+  /error\s+MT0180/i,
+  /requires\s+the\s+MacCatalyst\s+\S+\s+SDK\s+\(shipped\s+with\s+Xcode/i,
+];
 
 /** Heuristic: does build output indicate the MAUI workload is missing? */
 export const looksLikeMissingWorkload = (output: string): boolean =>
-  [
-    /NETSDK1147/i,
-    /workloads?\s+must\s+be\s+installed/i,
-    /maui-maccatalyst/i,
-    /maui-windows/i,
-    /to\s+install\s+the\s+.*workload/i,
-  ].some((re) => re.test(output));
+  matchesAny(output, MISSING_WORKLOAD_SIGNATURES);
 
-/**
- * Heuristic: does build output indicate full Xcode is missing? Mac Catalyst
- * builds need Xcode.app, not just the Command Line Tools, and fail with these
- * messages from Xamarin.Shared.targets when `xcode-select -p` points at CLT.
- */
+/** Heuristic: does build output indicate full Xcode is missing? */
 export const looksLikeMissingXcode = (output: string): boolean =>
-  [
-    /valid\s+Xcode\s+installation\s+was\s+not\s+found/i,
-    /could\s+not\s+find\s+a\s+valid\s+Xcode\s+app\s+bundle/i,
-    /macios-missing-xcode/i,
-  ].some((re) => re.test(output));
+  matchesAny(output, MISSING_XCODE_SIGNATURES);
+
+/** Heuristic: does build output indicate the installed Xcode is too old? */
+export const looksLikeXcodeTooOld = (output: string): boolean =>
+  matchesAny(output, OUTDATED_XCODE_SIGNATURES);
 
 // --- Environment probes ------------------------------------------------------
 
 const checkDotnetSdk = (): Requirement => {
+  const name = ".NET SDK";
   const res = run(DOTNET, ["--list-sdks"]);
+
   if (!res.found) {
     return {
-      name: ".NET SDK",
+      name,
       status: "missing",
       detail: "`dotnet` was not found on your PATH",
-      fix: "Install the .NET 10 SDK — https://dotnet.microsoft.com/download",
+      fix: INSTALL_NET_10_FIX,
     };
   }
   if (!res.ok && !res.stdout) {
-    return {
-      name: ".NET SDK",
-      status: "unknown",
-      detail: "could not run `dotnet --list-sdks`",
-    };
+    return { name, status: "unknown", detail: "could not run `dotnet --list-sdks`" };
   }
   if (hasNet10Sdk(res.stdout)) {
     const newest = newestNet10Sdk(res.stdout);
-    return {
-      name: ".NET SDK",
-      status: "ok",
-      detail: newest ? `found ${newest}` : "found 10.x",
-    };
+    return { name, status: "ok", detail: newest ? `found ${newest}` : "found 10.x" };
   }
   return {
-    name: ".NET SDK",
+    name,
     status: "missing",
     detail: "no 10.x SDK installed",
-    fix: "Install the .NET 10 SDK — https://dotnet.microsoft.com/download",
+    fix: INSTALL_NET_10_FIX,
   };
 };
 
-const checkMauiWorkload = (dotnetOk: boolean): Requirement => {
-  if (!dotnetOk) {
-    return {
-      name: ".NET MAUI workload",
-      status: "unknown",
-      detail: "requires the .NET SDK first",
-    };
+const checkMauiWorkload = (workloadList: RunResult | null): Requirement => {
+  const name = ".NET MAUI workload";
+
+  if (!workloadList) {
+    return { name, status: "unknown", detail: "requires the .NET SDK first" };
   }
-  const res = run(DOTNET, ["workload", "list"]);
-  if (!res.found) {
-    return {
-      name: ".NET MAUI workload",
-      status: "unknown",
-      detail: "could not query workloads",
-    };
+  if (!workloadList.found) {
+    return { name, status: "unknown", detail: "could not query workloads" };
   }
-  if (outputMentionsMaui(res.stdout)) {
-    return { name: ".NET MAUI workload", status: "ok", detail: "installed" };
+  if (outputMentionsMaui(workloadList.stdout)) {
+    return { name, status: "ok", detail: "installed" };
   }
   return {
-    name: ".NET MAUI workload",
+    name,
     status: "missing",
     detail: "not installed",
     fix: "dotnet workload install maui",
   };
 };
 
+/**
+ * Advisory: can this environment run the host under `dotnet watch`? On
+ * Windows any .NET 10 SDK can; Mac Catalyst needs a recent enough workload
+ * set. Never reported as `missing` — `vidra dev` degrades gracefully to a
+ * classic launch, so an old workload set shouldn't fail the doctor.
+ */
+const checkCSharpHotReload = (workloadList: RunResult | null): Requirement => {
+  const name = "C# hot reload";
+  if (!workloadList) {
+    return { name, status: "unknown", detail: "requires the .NET SDK first" };
+  }
+  if (process.platform !== "darwin") {
+    return { name, status: "ok", detail: "dotnet watch supported" };
+  }
+  const version = workloadSetVersion(workloadList.stdout);
+  if (!version) {
+    return {
+      name,
+      status: "unknown",
+      detail: "could not read the workload set version",
+    };
+  }
+  if (workloadSetSupportsCSharpHotReload(version)) {
+    return { name, status: "ok", detail: `workload set ${version}` };
+  }
+  return {
+    name,
+    status: "unknown",
+    detail: `workload set ${version} predates Mac Catalyst dotnet-watch support (needs 10.0.203+) — vidra dev falls back to a classic launch`,
+    fix: "dotnet workload update",
+  };
+};
+
 const checkXcode = (): Requirement => {
+  const name = "Xcode";
   const res = run("xcode-select", ["-p"]);
+
   if (!res.found || !res.ok) {
     return {
-      name: "Xcode",
+      name,
       status: "missing",
       detail: "not found",
       fix: "Install Xcode from the App Store",
     };
   }
   const devDir = res.stdout.trim();
-  if (/CommandLineTools/i.test(devDir)) {
+  if (COMMAND_LINE_TOOLS_PATH.test(devDir)) {
     return {
-      name: "Xcode",
+      name,
       status: "missing",
       detail: "only Command Line Tools detected (Mac Catalyst needs full Xcode)",
       fix: "Install Xcode, then: sudo xcode-select -s /Applications/Xcode.app",
     };
   }
-  return { name: "Xcode", status: "ok", detail: devDir };
+  return { name, status: "ok", detail: devDir };
 };
 
 export const isMauiWorkloadInstalled = (): boolean =>
@@ -189,7 +315,13 @@ export const collectRequirements = (
   opts: { includeXcode?: boolean } = {},
 ): Requirement[] => {
   const dotnet = checkDotnetSdk();
-  const reqs: Requirement[] = [dotnet, checkMauiWorkload(dotnet.status === "ok")];
+  const workloadList =
+    dotnet.status === "ok" ? run(DOTNET, ["workload", "list"]) : null;
+  const reqs: Requirement[] = [
+    dotnet,
+    checkMauiWorkload(workloadList),
+    checkCSharpHotReload(workloadList),
+  ];
   if (opts.includeXcode ?? process.platform === "darwin") {
     reqs.push(checkXcode());
   }
@@ -213,7 +345,7 @@ export const printRequirements = (reqs: Requirement[]): void => {
         detail: r.detail ? dim(r.detail) : undefined,
       }),
     );
-    if (r.status === "missing" && r.fix) {
+    if (r.status !== "ok" && r.fix) {
       console.log(fixLine(r.fix));
     }
   }
@@ -381,6 +513,25 @@ export const printWorkloadHint = (): void => {
     row({ glyph: "manual", label: "this looks like a missing .NET MAUI workload." }),
   );
   console.error(fixLine("dotnet workload install maui"));
+  console.error(fixLine("vidra doctor", "check:"));
+  console.error();
+};
+
+/** Prints an actionable hint when the installed Xcode predates the workload's SDK. */
+export const printXcodeTooOldHint = (): void => {
+  console.error();
+  console.error(
+    row({
+      glyph: "manual",
+      label: "your Xcode is older than the SDK this MAUI workload set expects.",
+    }),
+  );
+  console.error(
+    `      ${dim("\u2022")} ${dim("update Xcode (App Store), then")} ${lime("sudo xcodebuild -runFirstLaunch")}`,
+  );
+  console.error(
+    `      ${dim("\u2022")} ${dim("or pin the workloads to your Xcode's era:")} ${lime("dotnet workload update --version <set>")}`,
+  );
   console.error(fixLine("vidra doctor", "check:"));
   console.error();
 };

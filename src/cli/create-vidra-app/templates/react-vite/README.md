@@ -30,7 +30,22 @@ exact command to fix anything that's missing.
 npm run dev
 ```
 
-This starts the Vite dev server and launches the native host for the current OS.
+This starts the Vite dev server and launches the native host for the current OS
+under `dotnet watch`. Both sides of the app hot reload:
+
+- **UI**: edit anything in `ui/src` — Vite HMR updates the WebView instantly.
+- **C#**: edit the host (for example `OnTickAsync` in `MainPage.cs`) — supported
+  edits apply to the running app in seconds, and the UI flashes a
+  "C# reloaded" badge. Edits hot reload can't express (new fields, changed
+  signatures, …) trigger an automatic rebuild and relaunch.
+
+C# hot reload needs a recent toolchain (on macOS, the .NET 10.0.203+ workload
+set — run `npm run doctor` to check). When unavailable, `vidra dev` falls back
+to a one-shot build and launch. To skip `dotnet watch` explicitly:
+
+```bash
+npx vidra dev --no-hot-reload
+```
 
 To target a specific desktop platform explicitly:
 

@@ -42,6 +42,20 @@ public class VidraPage : ContentPage
         }
 
         LoadContent();
+        AnnounceDevHostReady();
+    }
+
+    /// <summary>
+    /// Prints a stable sentinel to stdout in dev sessions. The `vidra` CLI
+    /// scans host output for this line to know the app launched — under
+    /// `dotnet watch` no SDK-version-stable "started" message exists, and the
+    /// CLI uses launch state to decide between falling back to a classic
+    /// build+run (watch died before the app ever ran) and a normal shutdown.
+    /// </summary>
+    private static void AnnounceDevHostReady()
+    {
+        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("VIDRA_DEV_URL")))
+            Console.WriteLine("[vidra] host ready");
     }
 
     private void LoadContent()

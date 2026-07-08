@@ -16,7 +16,7 @@ const printHelp = (): void => {
     ${lime("vidra")} ${dim("<command> [options]")}
 
   ${dim("commands")}
-${cmd("dev", "start vite + the native host (hot reload)")}
+${cmd("dev", "start vite + the native host (UI + C# hot reload)")}
 ${cmd("run", "launch the native host only")}
 ${cmd("build", "build & package for distribution")}
 ${cmd("doctor", "check your environment")}
@@ -24,6 +24,7 @@ ${cmd("help", "show this message")}
 
   ${dim("examples")}
 ${ex("dev --target windows", "run the windows host")}
+${ex("dev --no-hot-reload", "skip dotnet watch, classic launch")}
 ${ex("build --plan", "preview the build, run nothing")}
 ${ex("build --target macos", "build & package a macOS DMG")}
 ${ex("doctor", "verify .NET SDK + MAUI workload")}

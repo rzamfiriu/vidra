@@ -19,7 +19,9 @@ const App = () => {
   const [windowSupport, setWindowSupport] = useState<WindowSupport | null>(null);
   const [caps, setCaps] = useState<Record<string, string[]> | null>(null);
   const [count, setCount] = useState(0);
+  const [csReloaded, setCsReloaded] = useState<string | null>(null);
   const countRef = useRef(0);
+  const reloadFlashTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     const unsubscribeCounter = vidra.handle<void, number>("counter.increment", () => {
@@ -27,6 +29,20 @@ const App = () => {
       setCount(countRef.current);
       return countRef.current;
     });
+
+    // Emitted by the native host when `vidra dev` hot reloads edited C#.
+    const unsubscribeHotReloaded = vidra.on<{ updatedTypes?: string[] }>(
+      "vidra.hotReloaded",
+      (data) => {
+        const typeName = data?.updatedTypes?.[0]?.split(".").pop();
+        setCsReloaded(typeName ? `C# reloaded · ${typeName}` : "C# reloaded");
+        window.clearTimeout(reloadFlashTimer.current);
+        reloadFlashTimer.current = window.setTimeout(
+          () => setCsReloaded(null),
+          2500,
+        );
+      },
+    );
 
     const unsubscribeResized = appWindow.onResized((windowInfo) => {
       setWindowSummary(`Window resized: ${describeWindow(windowInfo)}`);
@@ -47,8 +63,10 @@ const App = () => {
 
     return () => {
       unsubscribeCounter();
+      unsubscribeHotReloaded();
       unsubscribeResized();
       unsubscribeStateChanged();
+      window.clearTimeout(reloadFlashTimer.current);
     };
   }, []);
 
@@ -200,6 +218,12 @@ const App = () => {
             <span className="dot" />
             React + .NET MAUI
           </span>
+          {csReloaded && (
+            <span className="badge reload-badge">
+              <span className="dot" />
+              {csReloaded}
+            </span>
+          )}
           <h1 className="title">{{appTitle}}</h1>
           <p className="tagline">
             A cross-platform desktop app with a native bridge.

@@ -14,11 +14,15 @@ import {
   ensureMauiWorkload,
   looksLikeMissingWorkload,
   looksLikeMissingXcode,
+  looksLikeXcodeTooOld,
+  macCatalystHotReloadBlocker,
   printWorkloadHint,
   printXcodeHint,
+  printXcodeTooOldHint,
 } from "../doctor.js";
 import {
   dim,
+  fixLine,
   footer,
   header,
   kv,
@@ -35,6 +39,10 @@ const POLL_TIMEOUT_MS = 30_000;
 const NPM_COMMAND = process.platform === "win32" ? "npm.cmd" : "npm";
 const DOTNET_COMMAND = process.platform === "win32" ? "dotnet.exe" : "dotnet";
 
+// How much recent `dotnet watch` output to keep for diagnosing an early exit
+// (workload / Xcode hints) when deciding to fall back to a classic launch.
+const WATCH_OUTPUT_TAIL_CHARS = 8192;
+
 const TARGETS = {
   macos: {
     name: "macos",
@@ -50,25 +58,26 @@ type DevTargetName = keyof typeof TARGETS;
 type DevTarget = (typeof TARGETS)[DevTargetName];
 
 export const devCommand = (argv: string[]): Promise<void> =>
-  startSession(argv, { vite: true });
+  startSession(argv, { vite: true, hotReloadDefault: true });
 
 // `vidra run` builds and launches only the native host, without the Vite dev
 // server (use it when you're serving the UI separately). It launches the host
-// the same robust way `dev` does — build, then spawn the produced binary
-// directly — instead of MSBuild's `-t:Run` target, which on macOS shells out to
-// `open -a` and fails on locally signed apps, and on Windows execs an
+// the same robust way `dev` falls back to — build, then spawn the produced
+// binary directly — instead of MSBuild's `-t:Run` target, which on macOS shells
+// out to `open -a` and fails on locally signed apps, and on Windows execs an
 // unpackaged app whose native deps aren't laid out yet; both surface only as a
 // bare `MSB3073 ... exited with code N`.
 export const runCommand = (argv: string[]): Promise<void> =>
-  startSession(argv, { vite: false });
+  startSession(argv, { vite: false, hotReloadDefault: false });
 
 const startSession = async (
   argv: string[],
-  opts: { vite: boolean },
+  opts: { vite: boolean; hotReloadDefault: boolean },
 ): Promise<void> => {
   const args = parseArgs(["_", "_", ...argv]);
   const targetName = (args["target"] as string) || detectPlatform();
   const verbose = !!args["verbose"];
+  let hotReload = opts.hotReloadDefault && !args["no-hot-reload"];
   const viteUrl = process.env.VIDRA_DEV_URL || "http://localhost:5173";
   const target = TARGETS[targetName as DevTargetName];
 
@@ -93,24 +102,146 @@ const startSession = async (
     process.exit(1);
   }
 
-  const session = new DevSession(project, target, viteUrl, verbose, opts);
+  // On workload sets that predate Mac Catalyst dotnet-watch support, `dotnet
+  // watch` launches the app but silently never applies deltas or restarts —
+  // it doesn't fail, so this can't be detected from the session itself.
+  // Probe up-front and use the classic launch instead of lying about hot
+  // reload being active.
+  if (hotReload && target.name === "macos") {
+    const blocker = macCatalystHotReloadBlocker();
+    if (blocker) {
+      hotReload = false;
+      console.log();
+      console.log(
+        row({
+          glyph: "manual",
+          detail: `${dim("C# hot reload needs workload set 10.0.203+ \u2014 found")} ${value(blocker)}${dim("; using a classic launch")}`,
+        }),
+      );
+      console.log(fixLine("dotnet workload update"));
+    }
+  }
+
+  const session = new DevSession(project, target, viteUrl, verbose, {
+    vite: opts.vite,
+    hotReload,
+  });
   await session.run();
 };
+
+// --- dotnet watch helpers (exported for unit tests) ---------------------------
+
+export interface DotnetWatchArgsOptions {
+  csprojPath: string;
+  framework: string;
+  buildConfig: string;
+  verbose: boolean;
+  targetName: DevTargetName;
+}
+
+/**
+ * Arguments for launching the host under `dotnet watch`, which builds, runs,
+ * and hot reloads the app itself (it must own the launch so it can inject the
+ * hot reload agent via DOTNET_STARTUP_HOOKS).
+ */
+export const buildDotnetWatchArgs = (
+  opts: DotnetWatchArgsOptions,
+): string[] => [
+  "watch",
+  "--project",
+  opts.csprojPath,
+  // Never prompt on rude edits (our stdio is piped, so a prompt would hang);
+  // paired with DOTNET_WATCH_RESTART_ON_RUDE_EDIT for older SDKs.
+  "--non-interactive",
+  ...(opts.verbose ? ["--verbose"] : []),
+  "run",
+  "-f",
+  opts.framework,
+  "-c",
+  opts.buildConfig,
+  // Launch the Mac Catalyst app by exec'ing the binary rather than `open -a`,
+  // so the environment (VIDRA_DEV_URL, DOTNET_STARTUP_HOOKS) propagates and
+  // stdout streams back. Ignored by targets that don't define the property.
+  ...(opts.targetName === "macos" ? ["--property:RunWithOpen=false"] : []),
+];
+
+/** Extra environment for the `dotnet watch` process (inherited by the app). */
+export const dotnetWatchEnv = (devUrl: string): Record<string, string> => ({
+  VIDRA_DEV_URL: devUrl,
+  DOTNET_WATCH_RESTART_ON_RUDE_EDIT: "1",
+  DOTNET_WATCH_SUPPRESS_EMOJIS: "1",
+  DOTNET_WATCH_SUPPRESS_LAUNCH_BROWSER: "1",
+});
+
+export type WatchLineEvent = "appStarted" | "appWaiting" | "buildBlocked" | null;
+
+/**
+ * Classifies a `dotnet watch` output line into lifecycle events we act on:
+ *
+ * - `appStarted` — the app launched. Seen at least once means watch mode
+ *   works; a watch exit before it means watch isn't supported here and we
+ *   should fall back to a classic launch. The primary signal is the
+ *   `[vidra] host ready` sentinel VidraPage prints in dev sessions, because
+ *   `dotnet watch` itself has no version-stable "started" message (the .NET
+ *   10.0.2xx watcher prints none at all); the watch-message match covers
+ *   SDKs that do print one. Deliberately NOT matched on "Hot reload
+ *   enabled", which prints before the first build and would misclassify
+ *   run-target failures as post-launch exits.
+ * - `appWaiting` — the app is gone (closed, crashed, or a rebuild failed) and
+ *   watch is idle until the next file change. Matched on the full "waiting
+ *   for a file to change before restarting" phrase only: the shorter
+ *   "Waiting for changes" that .NET 10.0.3xx watchers print is ambiguous —
+ *   it also appears right after a successful launch while the app runs.
+ * - `buildBlocked` — a build failed and watch is idle until the error is
+ *   fixed. Before the first launch this can mean an environment problem
+ *   (wrong Xcode, missing workload) rather than a code error, so the session
+ *   prints targeted hints.
+ */
+export const HOST_READY_SENTINEL = "[vidra] host ready";
+
+export const classifyWatchLine = (line: string): WatchLineEvent => {
+  if (/waiting for a file to change/i.test(line)) return "appWaiting";
+  if (/fix the error to continue/i.test(line)) return "buildBlocked";
+  if (line.includes(HOST_READY_SENTINEL)) return "appStarted";
+  if (/\bwatch\b/i.test(line) && /\b(?:started|launched)\b/i.test(line)) {
+    return "appStarted";
+  }
+  return null;
+};
+
+interface SessionOptions {
+  vite: boolean;
+  hotReload: boolean;
+}
 
 class DevSession {
   private readonly children: ChildProcess[] = [];
   private readonly buildConfig = process.env.VIDRA_BUILD_CONFIG || "Debug";
   private readonly vite: boolean;
+  private readonly hotReload: boolean;
   private shuttingDown = false;
+
+  // Watch-mode state: `watchChild` is the `dotnet watch` process (a process
+  // group leader on unix, so shutdown can signal it and the app it launched
+  // together); `watchReady` flips once the app has started at least once.
+  private watchChild: ChildProcess | undefined;
+  private watchReady = false;
+  private watchOutputTail = "";
+
+  private endSession: () => void = () => {};
+  private readonly sessionDone = new Promise<void>((resolve) => {
+    this.endSession = resolve;
+  });
 
   constructor(
     private readonly project: ProjectInfo,
     private readonly target: DevTarget,
     private readonly viteUrl: string,
     private readonly verbose: boolean,
-    options: { vite?: boolean } = {},
+    options: SessionOptions,
   ) {
-    this.vite = options.vite ?? true;
+    this.vite = options.vite;
+    this.hotReload = options.hotReload;
   }
 
   async run(): Promise<void> {
@@ -122,9 +253,8 @@ class DevSession {
     console.log(kv("target", this.target.framework));
     console.log();
 
-    let vite: ChildProcess | undefined;
     if (this.vite) {
-      vite = this.startVite();
+      this.startVite();
 
       try {
         await waitForServer(this.viteUrl, POLL_TIMEOUT_MS);
@@ -146,25 +276,30 @@ class DevSession {
       );
     }
 
-    const host =
-      this.target.name === "macos"
-        ? this.launchMacosHost()
-        : this.launchWindowsHost();
+    this.launchHost();
+
+    const hostDirLabel = `src/${path.basename(this.project.hostDir)}`;
 
     if (this.vite) {
       console.log(
         taggedRow(
           "active",
           null,
-          `${lime("hot reload active")} ${dim("\u2014 edit ui/src and save")}`,
+          this.hotReload
+            ? `${lime("hot reload active")} ${dim(`\u2014 edit ui/src or ${hostDirLabel} and save`)}`
+            : `${lime("hot reload active")} ${dim("\u2014 edit ui/src and save")}`,
         ),
       );
       console.log();
       console.log(
         footer(
-          `${dim("watching")} ${value("ui/")} ${dim(
-            "\u00b7 hot reload on save \u00b7 ctrl-c to stop",
-          )}`,
+          this.hotReload
+            ? `${dim("watching")} ${value("ui/")} ${dim("\u00b7")} ${value(`${hostDirLabel}/`)} ${dim(
+                "\u00b7 hot reload on save \u00b7 ctrl-c to stop",
+              )}`
+            : `${dim("watching")} ${value("ui/")} ${dim(
+                "\u00b7 hot reload on save \u00b7 ctrl-c to stop",
+              )}`,
         ),
       );
     } else {
@@ -175,7 +310,10 @@ class DevSession {
     }
     console.log();
 
-    await waitForExit(...(vite ? [vite, host] : [host]));
+    // Every exit path funnels through shutdown(), which resolves this promise
+    // (and exits the process). Keeping run() pending until then means callers
+    // never observe a "finished" session with children still running.
+    await this.sessionDone;
   }
 
   private installSignalHandlers(): void {
@@ -201,6 +339,202 @@ class DevSession {
     });
     return this.registerChild(vite, "ui", "Vite dev server");
   }
+
+  private launchHost(): ChildProcess {
+    if (this.hotReload) {
+      return this.launchHostWithWatch();
+    }
+    return this.target.name === "macos"
+      ? this.launchMacosHost()
+      : this.launchWindowsHost();
+  }
+
+  // --- dotnet watch launch (C# hot reload) -----------------------------------
+
+  private launchHostWithWatch(): ChildProcess {
+    console.log(
+      taggedRow(
+        "active",
+        "host",
+        `${dim("dotnet watch \u2014 building")} ${value(this.target.framework)} ${dim("\u2026")}`,
+      ),
+    );
+
+    const watch = spawn(
+      DOTNET_COMMAND,
+      buildDotnetWatchArgs({
+        csprojPath: this.project.csprojPath,
+        framework: this.target.framework,
+        buildConfig: this.buildConfig,
+        verbose: this.verbose,
+        targetName: this.target.name,
+      }),
+      {
+        cwd: this.project.root,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, ...dotnetWatchEnv(this.viteUrl) },
+        // Unix: make dotnet watch its own process-group leader so shutdown can
+        // SIGTERM the group — taking down both watch and the app it launched.
+        // Windows cleanup goes through `taskkill /T` instead.
+        detached: process.platform !== "win32",
+      },
+    );
+
+    this.watchChild = watch;
+    this.children.push(watch);
+    // The readiness sentinel is translated into a friendlier status line by
+    // onWatchLine, so keep the raw marker out of the passthrough output.
+    const notSentinel = (line: string): boolean =>
+      !line.includes(HOST_READY_SENTINEL);
+    prefixStream(watch.stdout, "host", notSentinel);
+    prefixStream(watch.stderr, "host", notSentinel);
+    scanStream(watch.stdout, (line) => this.onWatchLine(line));
+    scanStream(watch.stderr, (line) => this.onWatchLine(line));
+
+    watch.on("exit", (code, signal) => {
+      if (this.shuttingDown) return;
+
+      if (this.watchReady) {
+        // The app ran at least once; treat like a normal host exit.
+        const failed = (code !== null && code !== 0) || signal !== null;
+        if (failed) {
+          console.error(
+            "\n" +
+              row({
+                glyph: "error",
+                detail: dim(
+                  `dotnet watch exited with ${signal ? `signal ${signal}` : `code ${code}`}`,
+                ),
+              }),
+          );
+        }
+        this.shutdown(code ?? (signal ? 1 : 0));
+        return;
+      }
+
+      this.fallBackToClassicLaunch(code, signal);
+    });
+
+    watch.on("error", (error) => {
+      if (this.shuttingDown) return;
+      // Spawning dotnet itself failed (e.g. not on PATH) — the classic path
+      // needs the same binary, so there is nothing to fall back to.
+      console.error(
+        "\n" +
+          row({
+            glyph: "error",
+            detail: dim(`failed to start dotnet watch: ${error.message}`),
+          }),
+      );
+      this.shutdown(1);
+    });
+
+    return watch;
+  }
+
+  private onWatchLine(line: string): void {
+    this.watchOutputTail = (this.watchOutputTail + line + "\n").slice(
+      -WATCH_OUTPUT_TAIL_CHARS,
+    );
+
+    const event = classifyWatchLine(line);
+    if (event === "appStarted" && !this.watchReady) {
+      this.watchReady = true;
+      console.log(
+        taggedRow(
+          "done",
+          "host",
+          `${dim("launched")} ${value(this.project.projectName)} ${dim("\u2014 C# hot reload active")}`,
+        ),
+      );
+    } else if (event === "appWaiting" && !this.shuttingDown) {
+      // The app is gone (window closed, crash, or a failed rebuild after a
+      // rude edit). dotnet watch stays alive and relaunches on the next save,
+      // so keep the session open instead of tearing everything down.
+      console.log(
+        taggedRow(
+          "manual",
+          "host",
+          dim("app not running \u2014 save a C# file to relaunch, or ctrl-c to stop"),
+        ),
+      );
+    } else if (event === "buildBlocked" && !this.shuttingDown) {
+      if (!this.watchReady) {
+        // The very first build failed, so this may be an environment problem
+        // rather than a code error; surface the usual targeted hints. dotnet
+        // watch keeps waiting, and a save retries the build.
+        if (looksLikeMissingWorkload(this.watchOutputTail)) printWorkloadHint();
+        else if (looksLikeXcodeTooOld(this.watchOutputTail)) printXcodeTooOldHint();
+        else if (looksLikeMissingXcode(this.watchOutputTail)) printXcodeHint();
+      }
+      console.log(
+        taggedRow(
+          "manual",
+          "host",
+          dim("build failed \u2014 fix the error and save to retry, or ctrl-c to stop"),
+        ),
+      );
+    }
+  }
+
+  /**
+   * `dotnet watch` exited before the app ever started — typically an SDK or
+   * MAUI workload set that predates `dotnet run`/`dotnet watch` support for
+   * this target. Explain why, then launch the host the classic way (one
+   * build + direct spawn) so the dev session still works, minus C# hot reload.
+   */
+  private fallBackToClassicLaunch(
+    code: number | null,
+    signal: NodeJS.Signals | null,
+  ): void {
+    console.log();
+    console.log(
+      taggedRow(
+        "manual",
+        "host",
+        `${dim("C# hot reload unavailable \u2014 dotnet watch exited with")} ${value(
+          signal ? `signal ${signal}` : `code ${code ?? "unknown"}`,
+        )}`,
+      ),
+    );
+
+    if (looksLikeMissingWorkload(this.watchOutputTail)) {
+      printWorkloadHint();
+    } else if (looksLikeXcodeTooOld(this.watchOutputTail)) {
+      printXcodeTooOldHint();
+    } else if (looksLikeMissingXcode(this.watchOutputTail)) {
+      printXcodeHint();
+    } else {
+      console.log(
+        footer(
+          dim(
+            "C# hot reload needs the .NET 10.0.203+ workload set (Mac Catalyst dotnet-watch support) \u2014 try:",
+          ),
+        ),
+      );
+      console.log(fixLine("dotnet workload update"));
+      if (!this.verbose) {
+        console.log(footer(dim("re-run with --verbose for the full watch log.")));
+      }
+    }
+
+    console.log(
+      taggedRow(
+        "active",
+        "host",
+        dim("falling back to a classic launch (frontend hot reload still active)\u2026"),
+      ),
+    );
+    console.log();
+
+    if (this.target.name === "macos") {
+      this.launchMacosHost();
+    } else {
+      this.launchWindowsHost();
+    }
+  }
+
+  // --- classic launch (one build + direct spawn) ------------------------------
 
   // Builds the MAUI host as a discrete step (a plain `dotnet build`, never
   // MSBuild's `-t:Run`) so the per-OS launch paths can spawn the produced
@@ -338,8 +672,14 @@ class DevSession {
     label: string,
   ): ChildProcess {
     this.children.push(child);
-    prefixStream(child.stdout, tag);
-    prefixStream(child.stderr, tag);
+    // Host processes emit the readiness sentinel in dev sessions; it's CLI
+    // plumbing (see classifyWatchLine), not output the user should see.
+    const include =
+      tag === "host"
+        ? (line: string): boolean => !line.includes(HOST_READY_SENTINEL)
+        : undefined;
+    prefixStream(child.stdout, tag, include);
+    prefixStream(child.stderr, tag, include);
 
     child.on("exit", (code, signal) => {
       if (this.shuttingDown) return;
@@ -390,9 +730,10 @@ class DevSession {
     this.shuttingDown = true;
 
     for (const child of this.children) {
-      killChild(child);
+      killChild(child, { processGroup: child === this.watchChild });
     }
 
+    this.endSession();
     process.exit(exitCode);
   }
 }
@@ -416,6 +757,7 @@ const ensureTargetMatchesHostOs = (targetName: DevTargetName): void => {
 const prefixStream = (
   stream: NodeJS.ReadableStream | null,
   tag: TagName,
+  include: (line: string) => boolean = () => true,
 ): void => {
   if (!stream) return;
 
@@ -423,10 +765,29 @@ const prefixStream = (
   stream.on("data", (chunk) => {
     const lines = chunk.toString().split("\n");
     for (const line of lines) {
-      if (line.length > 0) {
+      if (line.length > 0 && include(line)) {
         process.stdout.write(`${prefix} ${line}\n`);
       }
     }
+  });
+};
+
+/** Invokes `onLine` per complete output line, buffering partial chunks. */
+const scanStream = (
+  stream: NodeJS.ReadableStream | null,
+  onLine: (line: string) => void,
+): void => {
+  if (!stream) return;
+
+  let pending = "";
+  stream.on("data", (chunk) => {
+    pending += chunk.toString();
+    const lines = pending.split("\n");
+    pending = lines.pop() ?? "";
+    for (const line of lines) onLine(line);
+  });
+  stream.on("end", () => {
+    if (pending) onLine(pending);
   });
 };
 
@@ -462,15 +823,6 @@ const waitForServer = (url: string, timeoutMs: number): Promise<void> => {
     };
 
     poll();
-  });
-};
-
-const waitForExit = (...children: ChildProcess[]): Promise<void> => {
-  return new Promise((resolve) => {
-    const resolveOnce = (): void => resolve();
-    for (const child of children) {
-      child.once("exit", resolveOnce);
-    }
   });
 };
 
@@ -558,7 +910,10 @@ const findFileRecursive = (
   return null;
 };
 
-const killChild = (child: ChildProcess): void => {
+const killChild = (
+  child: ChildProcess,
+  opts: { processGroup?: boolean } = {},
+): void => {
   if (!child.pid || child.exitCode !== null) return;
 
   if (process.platform === "win32") {
@@ -570,6 +925,17 @@ const killChild = (child: ChildProcess): void => {
       child.kill();
     }
     return;
+  }
+
+  // A detached child leads its own process group; signal the whole group so
+  // its grandchildren (the app `dotnet watch` launched) terminate with it.
+  if (opts.processGroup) {
+    try {
+      process.kill(-child.pid, "SIGTERM");
+      return;
+    } catch {
+      // Group already gone — fall through to a plain kill.
+    }
   }
 
   child.kill("SIGTERM");

@@ -5,6 +5,9 @@ import {
   outputMentionsMaui,
   looksLikeMissingWorkload,
   looksLikeMissingXcode,
+  looksLikeXcodeTooOld,
+  workloadSetVersion,
+  workloadSetSupportsCSharpHotReload,
 } from "../doctor.js";
 
 describe("hasNet10Sdk", () => {
@@ -88,6 +91,49 @@ describe("looksLikeMissingWorkload", () => {
   });
 });
 
+describe("workloadSetVersion", () => {
+  it("extracts the version from `dotnet workload list` output", () => {
+    const out = [
+      "Workload version: 10.0.201",
+      "",
+      "Installed Workload Id      Manifest Version      Installation Source",
+      "maui-maccatalyst           10.0.20/10.0.100      SDK 10.0.200",
+    ].join("\n");
+    expect(workloadSetVersion(out)).toBe("10.0.201");
+  });
+
+  it("handles four-part and preview workload set versions", () => {
+    expect(workloadSetVersion("Workload version: 10.0.300.3")).toBe("10.0.300.3");
+    expect(workloadSetVersion("Workload version: 11.0.100-preview.5.26309.3")).toBe(
+      "11.0.100-preview.5.26309.3",
+    );
+  });
+
+  it("is undefined when the line is absent", () => {
+    expect(workloadSetVersion("Installed Workload Id ...")).toBeUndefined();
+  });
+});
+
+describe("workloadSetSupportsCSharpHotReload", () => {
+  it.each(["10.0.203", "10.0.203.1", "10.0.300.3", "10.1.0", "11.0.100-preview.5.26309.3"])(
+    "accepts %s",
+    (version) => {
+      expect(workloadSetSupportsCSharpHotReload(version)).toBe(true);
+    },
+  );
+
+  it.each(["10.0.201", "10.0.202.9", "10.0.100", "9.0.314.3", "8.0.404"])(
+    "rejects %s",
+    (version) => {
+      expect(workloadSetSupportsCSharpHotReload(version)).toBe(false);
+    },
+  );
+
+  it("rejects unparseable versions", () => {
+    expect(workloadSetSupportsCSharpHotReload("unknown")).toBe(false);
+  });
+});
+
 describe("looksLikeMissingXcode", () => {
   it.each([
     "error : A valid Xcode installation was not found at the configured location: '/Library/Developer/CommandLineTools'",
@@ -100,6 +146,29 @@ describe("looksLikeMissingXcode", () => {
   it("does not flag a missing-workload error", () => {
     expect(
       looksLikeMissingXcode(
+        "error NETSDK1147: the following workloads must be installed: maui-maccatalyst",
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("looksLikeXcodeTooOld", () => {
+  it("flags the MT0180 version-mismatch error", () => {
+    expect(
+      looksLikeXcodeTooOld(
+        "ILLINK : error MT0180: This version of Microsoft.MacCatalyst requires the MacCatalyst 26.5 SDK (shipped with Xcode 26.5). Either upgrade Xcode to get the required header files or set the managed linker behaviour to Link Framework SDKs Only in your project's iOS Build Options > Linker Behavior (to try to avoid the new APIs).",
+      ),
+    ).toBe(true);
+  });
+
+  it("ignores missing-Xcode and workload errors", () => {
+    expect(
+      looksLikeXcodeTooOld(
+        "error : A valid Xcode installation was not found at the configured location: '/Library/Developer/CommandLineTools'",
+      ),
+    ).toBe(false);
+    expect(
+      looksLikeXcodeTooOld(
         "error NETSDK1147: the following workloads must be installed: maui-maccatalyst",
       ),
     ).toBe(false);
