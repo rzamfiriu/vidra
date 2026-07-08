@@ -137,6 +137,15 @@ Full pipeline and C# → TS type mapping: **[Type safety & codegen →](docs/arc
 Mobile (iOS / Android) is on the roadmap as the .NET MAUI foundation makes it a natural
 next target.
 
+## Contributing
+
+Contributions are welcome! To get started:
+
+1. Fork the repo and create a branch from `main`.
+2. Make your change — for anything non-trivial, consider [opening an issue](https://github.com/rzamfiriu/vidra/issues) first to discuss the approach.
+3. Run the relevant test suites (see [Testing](docs/testing.md) for how to run them locally).
+4. Open a pull request with a short description of what changed and why.
+
 ## License
 
 [MIT](LICENSE) · [Report an issue →](https://github.com/rzamfiriu/vidra/issues)
