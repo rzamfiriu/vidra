@@ -20,6 +20,6 @@ export class EssentialsProxy {
   constructor(private client: VidraClient) {}
 
   getSupport(): Promise<EssentialsSupport> {
-    return this.client.invoke("essentials", "getSupport");
+    return this.client.unsafe.invoke("essentials", "getSupport");
   }
 }

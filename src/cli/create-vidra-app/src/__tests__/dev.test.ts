@@ -1,9 +1,23 @@
 import { describe, it, expect } from "vitest";
 import {
+  buildViteArgs,
   buildDotnetWatchArgs,
   classifyWatchLine,
   dotnetWatchEnv,
 } from "../commands/dev.js";
+
+describe("buildViteArgs", () => {
+  it("starts Vite on the port selected for the native host", () => {
+    expect(buildViteArgs("http://localhost:6000/")).toEqual([
+      "run",
+      "dev",
+      "--",
+      "--port",
+      "6000",
+      "--strictPort",
+    ]);
+  });
+});
 
 describe("buildDotnetWatchArgs", () => {
   const base = {

@@ -15,9 +15,12 @@ import { FilesystemProxy } from "./filesystem.js";
 import { LauncherProxy } from "./launcher.js";
 import { NotificationsProxy } from "./notifications.js";
 import { PreferencesProxy } from "./preferences.js";
+import { RuntimeProxy } from "./runtime.js";
 import { SecureStorageProxy } from "./secureStorage.js";
 import { ShareProxy } from "./share.js";
 import { TextToSpeechProxy } from "./textToSpeech.js";
+
+vidra.registerGeneratedManifest("core", "a4d6e4856749f06fd3c84be9bb5a468c5219e71797777a977a2d0772dc6214db");
 
 export const app = new AppProxy(vidra);
 export const appWindow = new AppWindowProxy(vidra);
@@ -34,6 +37,7 @@ export const filesystem = new FilesystemProxy(vidra);
 export const launcher = new LauncherProxy(vidra);
 export const notifications = new NotificationsProxy(vidra);
 export const preferences = new PreferencesProxy(vidra);
+export const runtime = new RuntimeProxy(vidra);
 export const secureStorage = new SecureStorageProxy(vidra);
 export const share = new ShareProxy(vidra);
 export const textToSpeech = new TextToSpeechProxy(vidra);
@@ -53,6 +57,7 @@ export * from "./filesystem.js";
 export * from "./launcher.js";
 export * from "./notifications.js";
 export * from "./preferences.js";
+export * from "./runtime.js";
 export * from "./secureStorage.js";
 export * from "./share.js";
 export * from "./textToSpeech.js";

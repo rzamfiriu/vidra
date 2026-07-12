@@ -25,3 +25,17 @@ public sealed class SampleModule : BridgeModuleBase
     public Task<EchoResult> EchoAsync(EchoArgs args, CancellationToken ct)
         => Task.FromResult(new EchoResult(args.Text, Array.Empty<string>(), Mood.Happy, new[] { Mood.Happy }, null));
 }
+
+[BridgeEventContract("sample")]
+public interface ISampleEvents
+{
+    [BridgeEvent("changed")]
+    void Changed(EchoResult payload);
+}
+
+[JsContract("dialog")]
+public interface IDialogJs
+{
+    [JsMethod("confirm")]
+    Task<bool> ConfirmAsync(EchoArgs payload);
+}

@@ -34,18 +34,18 @@ export class SecureStorageProxy {
   constructor(private client: VidraClient) {}
 
   get(args: SecureStorageGetArgs): Promise<SecureStorageGetResult> {
-    return this.client.invoke("secureStorage", "get", args);
+    return this.client.unsafe.invoke("secureStorage", "get", args);
   }
 
   set(args: SecureStorageSetArgs): Promise<SecureStorageSetResult> {
-    return this.client.invoke("secureStorage", "set", args);
+    return this.client.unsafe.invoke("secureStorage", "set", args);
   }
 
   remove(args: SecureStorageRemoveArgs): Promise<SecureStorageRemoveResult> {
-    return this.client.invoke("secureStorage", "remove", args);
+    return this.client.unsafe.invoke("secureStorage", "remove", args);
   }
 
   removeAll(): Promise<SecureStorageRemoveAllResult> {
-    return this.client.invoke("secureStorage", "removeAll");
+    return this.client.unsafe.invoke("secureStorage", "removeAll");
   }
 }

@@ -21,14 +21,14 @@ export class ClipboardProxy {
   constructor(private client: VidraClient) {}
 
   getText(): Promise<GetTextResult> {
-    return this.client.invoke("clipboard", "getText");
+    return this.client.unsafe.invoke("clipboard", "getText");
   }
 
   setText(args: SetTextArgs): Promise<SetTextResult> {
-    return this.client.invoke("clipboard", "setText", args);
+    return this.client.unsafe.invoke("clipboard", "setText", args);
   }
 
   hasText(): Promise<HasTextResult> {
-    return this.client.invoke("clipboard", "hasText");
+    return this.client.unsafe.invoke("clipboard", "hasText");
   }
 }

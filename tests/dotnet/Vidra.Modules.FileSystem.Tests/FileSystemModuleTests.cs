@@ -49,8 +49,8 @@ public sealed class FileSystemModuleBehaviorTests : IDisposable
         var request = BridgeSerializer.Serialize(new BridgeRequest
         {
             Id = Guid.NewGuid().ToString("N"),
-            Module = "filesystem",
-            Method = method,
+            Contract = "filesystem",
+            Member = method,
             Payload = payload is null
                 ? null
                 : JsonSerializer.SerializeToElement(payload, BridgeSerializer.Default),
@@ -132,6 +132,6 @@ public sealed class FileSystemModuleBehaviorTests : IDisposable
     {
         var response = await InvokeAsync("readText", new { path = Path.Combine(_dir, "nope.txt") });
         response.GetProperty("success").GetBoolean().Should().BeFalse();
-        response.GetProperty("error").GetProperty("code").GetString().Should().Be("MODULE_ERROR");
+        response.GetProperty("error").GetProperty("code").GetString().Should().Be("NATIVE_MEMBER_ERROR");
     }
 }

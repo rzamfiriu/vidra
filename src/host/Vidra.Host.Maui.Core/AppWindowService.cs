@@ -255,16 +255,15 @@ public sealed partial class AppWindowService : IAppWindowService
         await EmitEventAsync(AppWindowEvents.StateChanged, info, ct);
     }
 
-    private async Task EmitEventAsync(string eventName, WindowInfo info, CancellationToken ct = default)
+    private async Task EmitEventAsync(
+        BridgeEventToken<WindowInfo> eventToken,
+        WindowInfo info,
+        CancellationToken ct = default)
     {
         if (_callbackChannel is null)
             return;
 
-        await _callbackChannel.SendEventAsync(new BridgeEvent
-        {
-            Event = eventName,
-            Data = info
-        }, ct);
+        await _callbackChannel.SendEventAsync(eventToken, info, ct);
     }
 
     private WindowState DetectWindowState(Window window)

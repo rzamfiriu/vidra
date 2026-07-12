@@ -37,14 +37,14 @@ export class DialogsProxy {
   constructor(private client: VidraClient) {}
 
   alert(args: AlertArgs): Promise<AlertResult> {
-    return this.client.invoke("dialogs", "alert", args);
+    return this.client.unsafe.invoke("dialogs", "alert", args);
   }
 
   confirm(args: ConfirmArgs): Promise<ConfirmResult> {
-    return this.client.invoke("dialogs", "confirm", args);
+    return this.client.unsafe.invoke("dialogs", "confirm", args);
   }
 
   prompt(args: PromptArgs): Promise<PromptResult> {
-    return this.client.invoke("dialogs", "prompt", args);
+    return this.client.unsafe.invoke("dialogs", "prompt", args);
   }
 }

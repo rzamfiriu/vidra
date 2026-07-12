@@ -1,6 +1,7 @@
 {
-  "event": "connectivity.changed",
-  "data": {
+  "contract": "connectivity",
+  "member": "changed",
+  "payload": {
     "access": "internet",
     "profiles": ["wifi", "ethernet"]
   }

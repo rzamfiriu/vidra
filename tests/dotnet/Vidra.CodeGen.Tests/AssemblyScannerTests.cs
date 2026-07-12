@@ -1,5 +1,6 @@
 using Vidra.CodeGen;
 using Vidra.CodeGen.TestFixtures;
+using Vidra.Bridge;
 
 namespace Vidra.CodeGen.Tests;
 
@@ -16,8 +17,8 @@ public sealed class AssemblyScannerTests
 
         var manifest = scanner.Scan(new[] { path });
 
-        manifest.Modules.Should().ContainKey("sample");
-        manifest.Modules["sample"].ClassName.Should().Be("SampleModule");
+        manifest.Contracts.Should().ContainKey("sample");
+        manifest.Contracts["sample"].ClassName.Should().Be("SampleModule");
     }
 
     [Fact]
@@ -26,8 +27,8 @@ public sealed class AssemblyScannerTests
         var path = FixtureAssemblyPath();
         var manifest = new AssemblyScanner(new[] { path }).Scan(new[] { path });
 
-        var sample = manifest.Modules["sample"];
-        sample.Methods.Should().ContainKey("echo");
+        var sample = manifest.Contracts["sample"];
+        sample.NativeMethods.Should().ContainKey("echo");
     }
 
     [Fact]
@@ -36,7 +37,7 @@ public sealed class AssemblyScannerTests
         var path = FixtureAssemblyPath();
         var manifest = new AssemblyScanner(new[] { path }).Scan(new[] { path });
 
-        var paramsRef = manifest.Modules["sample"].Methods["echo"].Params!;
+        var paramsRef = manifest.Contracts["sample"].NativeMethods["echo"].Params!;
         paramsRef.Kind.Should().Be("object");
         paramsRef.Fields.Should().NotBeNull();
         paramsRef.Fields!["text"].Kind.Should().Be("primitive");
@@ -49,7 +50,7 @@ public sealed class AssemblyScannerTests
         var path = FixtureAssemblyPath();
         var manifest = new AssemblyScanner(new[] { path }).Scan(new[] { path });
 
-        var paramsRef = manifest.Modules["sample"].Methods["echo"].Params!;
+        var paramsRef = manifest.Contracts["sample"].NativeMethods["echo"].Params!;
         var count = paramsRef.Fields!["count"];
         count.Kind.Should().Be("nullable");
         count.Element!.Kind.Should().Be("primitive");
@@ -62,7 +63,7 @@ public sealed class AssemblyScannerTests
         var path = FixtureAssemblyPath();
         var manifest = new AssemblyScanner(new[] { path }).Scan(new[] { path });
 
-        var returnsRef = manifest.Modules["sample"].Methods["echo"].Returns!;
+        var returnsRef = manifest.Contracts["sample"].NativeMethods["echo"].Returns!;
         var note = returnsRef.Fields!["note"];
         note.Kind.Should().Be("nullable");
         note.Element!.Kind.Should().Be("primitive");
@@ -75,7 +76,7 @@ public sealed class AssemblyScannerTests
         var path = FixtureAssemblyPath();
         var manifest = new AssemblyScanner(new[] { path }).Scan(new[] { path });
 
-        var returnsRef = manifest.Modules["sample"].Methods["echo"].Returns!;
+        var returnsRef = manifest.Contracts["sample"].NativeMethods["echo"].Returns!;
         returnsRef.Fields!["tags"].Kind.Should().Be("array");
         returnsRef.Fields["tags"].Element!.TsType.Should().Be("string");
     }
@@ -86,7 +87,7 @@ public sealed class AssemblyScannerTests
         var path = FixtureAssemblyPath();
         var manifest = new AssemblyScanner(new[] { path }).Scan(new[] { path });
 
-        var returnsRef = manifest.Modules["sample"].Methods["echo"].Returns!;
+        var returnsRef = manifest.Contracts["sample"].NativeMethods["echo"].Returns!;
         var mood = returnsRef.Fields!["mood"];
         mood.Kind.Should().Be("enum");
         mood.Values.Should().BeEquivalentTo(new[] { "Happy", "Neutral", "Sad" });
@@ -98,8 +99,52 @@ public sealed class AssemblyScannerTests
         var path = FixtureAssemblyPath();
         var manifest = new AssemblyScanner(new[] { path }).Scan(new[] { path });
 
-        var method = manifest.Modules["sample"].Methods["echo"];
+        var method = manifest.Contracts["sample"].NativeMethods["echo"];
         method.Params.Should().NotBeNull();
         method.Params!.Fields.Should().NotContainKey("ct");
+    }
+
+    [Fact]
+    public void Scan_Merges_Events_Into_Their_Native_Contract()
+    {
+        var path = FixtureAssemblyPath();
+        var manifest = new AssemblyScanner(new[] { path }).Scan(new[] { path });
+
+        var changed = manifest.Contracts["sample"].Events["changed"];
+        changed.Payload!.Name.Should().Be("EchoResult");
+    }
+
+    [Fact]
+    public void Scan_Discovers_Js_Contracts()
+    {
+        var path = FixtureAssemblyPath();
+        var manifest = new AssemblyScanner(new[] { path }).Scan(new[] { path });
+
+        var confirm = manifest.Contracts["dialog"].JsMethods["confirm"];
+        confirm.Params!.Name.Should().Be("EchoArgs");
+        confirm.Returns!.TsType.Should().Be("boolean");
+    }
+
+    [Fact]
+    public void Scan_Produces_A_Deterministic_Fingerprint()
+    {
+        var path = FixtureAssemblyPath();
+        var first = new AssemblyScanner(new[] { path }).Scan(new[] { path });
+        var second = new AssemblyScanner(new[] { path }).Scan(new[] { path });
+
+        first.Fingerprint.Should().NotBeNullOrWhiteSpace();
+        first.Fingerprint.Should().Be(second.Fingerprint);
+    }
+
+    [Fact]
+    public void Scanner_And_Source_Generator_Produce_The_Same_Fingerprint()
+    {
+        var path = FixtureAssemblyPath();
+        var manifest = new AssemblyScanner(new[] { path }).Scan(new[] { path });
+
+        BridgeContractRegistry.CanonicalManifest(BridgeManifestScope.App)
+            .Should().Be(manifest.CanonicalManifest);
+        BridgeContractRegistry.Fingerprint(BridgeManifestScope.App)
+            .Should().Be(manifest.Fingerprint);
     }
 }

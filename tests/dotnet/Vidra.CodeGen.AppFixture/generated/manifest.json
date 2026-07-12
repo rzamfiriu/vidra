@@ -1,0 +1,27 @@
+{
+  "contracts": {
+    "counter": {
+      "nativeMethods": {},
+      "events": {},
+      "jsMethods": {
+        "increment": {
+          "params": {
+            "kind": "object",
+            "name": "IncrementArgs",
+            "fields": {
+              "amount": {
+                "kind": "primitive",
+                "tsType": "number"
+              }
+            }
+          },
+          "returns": {
+            "kind": "primitive",
+            "tsType": "number"
+          }
+        }
+      }
+    }
+  },
+  "fingerprint": "e9e4b05cd3d4cc81a5b93cd2749052d9061195dcd7e77728d50a1a7575cf42be"
+}

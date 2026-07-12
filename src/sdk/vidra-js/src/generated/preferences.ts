@@ -42,22 +42,22 @@ export class PreferencesProxy {
   constructor(private client: VidraClient) {}
 
   get(args: PreferencesGetArgs): Promise<PreferencesGetResult> {
-    return this.client.invoke("preferences", "get", args);
+    return this.client.unsafe.invoke("preferences", "get", args);
   }
 
   set(args: PreferencesSetArgs): Promise<PreferencesSetResult> {
-    return this.client.invoke("preferences", "set", args);
+    return this.client.unsafe.invoke("preferences", "set", args);
   }
 
   remove(args: PreferencesRemoveArgs): Promise<PreferencesRemoveResult> {
-    return this.client.invoke("preferences", "remove", args);
+    return this.client.unsafe.invoke("preferences", "remove", args);
   }
 
   containsKey(args: PreferencesContainsArgs): Promise<PreferencesContainsResult> {
-    return this.client.invoke("preferences", "containsKey", args);
+    return this.client.unsafe.invoke("preferences", "containsKey", args);
   }
 
   clear(): Promise<PreferencesClearResult> {
-    return this.client.invoke("preferences", "clear");
+    return this.client.unsafe.invoke("preferences", "clear");
   }
 }

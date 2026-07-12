@@ -53,7 +53,7 @@ describe("Bridge contract fixtures (SDK side)", () => {
     const expected = readFixture("invoke.success.response.json");
     transport.onSend = (req) => deliver({ ...expected, id: req.id });
 
-    const result = await client.invoke("echo", "ping", { text: "hello" });
+    const result = await client.unsafe.invoke("echo", "ping", { text: "hello" });
     expect(result).toEqual(expected.data);
   });
 
@@ -61,7 +61,7 @@ describe("Bridge contract fixtures (SDK side)", () => {
     const expected = readFixture("invoke.module_not_found.response.json");
     transport.onSend = (req) => deliver({ ...expected, id: req.id });
 
-    await expect(client.invoke("does-not-exist", "noop")).rejects.toThrow(
+    await expect(client.unsafe.invoke("does-not-exist", "noop")).rejects.toThrow(
       `[${expected.error.code}] ${expected.error.message}`,
     );
   });
@@ -70,7 +70,7 @@ describe("Bridge contract fixtures (SDK side)", () => {
     const expected = readFixture("invoke.module_error.response.json");
     transport.onSend = (req) => deliver({ ...expected, id: req.id });
 
-    await expect(client.invoke("echo", "fail")).rejects.toThrow(
+    await expect(client.unsafe.invoke("echo", "fail")).rejects.toThrow(
       `[${expected.error.code}] ${expected.error.message}`,
     );
   });
@@ -83,19 +83,23 @@ describe("Bridge contract fixtures (SDK side)", () => {
     expect(caps).toEqual(expected.data);
   });
 
-  it("emits events matching event.app_resume.json shape", () => {
+  it("emits events matching event.runtime_hot_reloaded.json shape", () => {
     const received: unknown[] = [];
-    client.on("app.resume", (d) => received.push(d));
+    client.unsafe.on("runtime", "hotReloaded", (data) => received.push(data));
 
-    const event = readFixture("event.app_resume.json") as BridgeEvent;
+    const event = readFixture("event.runtime_hot_reloaded.json") as BridgeEvent;
     (window as any).__vidra_onevent(event);
 
-    expect(received).toEqual([event.data]);
+    expect(received).toEqual([event.payload]);
   });
 
   it("delivers connectivity.changed enum event matching the generated type", () => {
     const received: ConnectivityStatus[] = [];
-    client.on<ConnectivityStatus>("connectivity.changed", (d) => received.push(d));
+    client.unsafe.on<ConnectivityStatus>(
+      "connectivity",
+      "changed",
+      (data) => received.push(data),
+    );
 
     const event = readFixture("event.connectivity_changed.json") as BridgeEvent;
     (window as any).__vidra_onevent(event);
@@ -110,7 +114,11 @@ describe("Bridge contract fixtures (SDK side)", () => {
   });
 
   it("reverse.success.request.json is handled and produces a success response", async () => {
-    client.handle<{ message: string }, boolean>("confirm", async () => true);
+    client.unsafe.handle<{ message: string }, boolean>(
+      "dialog",
+      "confirm",
+      async () => true,
+    );
 
     const req = readFixture("reverse.success.request.json") as ReverseRequest;
     (window as any).__vidra_invoke(req);
@@ -125,7 +133,11 @@ describe("Bridge contract fixtures (SDK side)", () => {
   it("unregistered handlers produce reverse.handler_not_found.response.json", async () => {
     const expected = readFixture("reverse.handler_not_found.response.json");
 
-    const request: ReverseRequest = { id: expected.id, handler: "confirm" };
+    const request: ReverseRequest = {
+      id: expected.id,
+      contract: "dialog",
+      member: "confirm",
+    };
     (window as any).__vidra_invoke(request);
 
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -134,12 +146,16 @@ describe("Bridge contract fixtures (SDK side)", () => {
   });
 
   it("throwing handlers produce reverse.handler_error.response.json shape", async () => {
-    client.handle("boom", () => {
+    client.unsafe.handle("test", "boom", () => {
       throw new Error("boom");
     });
     const expected = readFixture("reverse.handler_error.response.json");
 
-    (window as any).__vidra_invoke({ id: expected.id, handler: "boom" });
+    (window as any).__vidra_invoke({
+      id: expected.id,
+      contract: "test",
+      member: "boom",
+    });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(transport.sentReverse[0].id).toBe(expected.id);

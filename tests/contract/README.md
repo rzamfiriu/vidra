@@ -6,9 +6,9 @@ wire format stable across languages.
 
 Each file represents one canonical request or response on the bridge:
 
-- `invoke.*` — JS to native invoke roundtrips.
-- `event.*` — events the native side pushes to JS.
-- `reverse.*` — reverse RPC from native into a JS handler.
+- `invoke.*` — JS→C# native-contract roundtrips.
+- `event.*` — C#→JS event-contract pushes.
+- `reverse.*` — internal wire fixtures for C#→JS JS-contract calls.
 - `capabilities.*` — response shape for `__bridge.capabilities`.
 
 Both test suites import these files from this directory. Changes here are

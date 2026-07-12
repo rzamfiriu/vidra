@@ -59,10 +59,11 @@
       <VidraModuleAssembly Include="$(VidraModulesDir)\Vidra.Modules.AppLifecycle\bin\$(Configuration)\$(TargetFramework)\Vidra.Modules.AppLifecycle.dll" />
       <VidraModuleAssembly Include="$(VidraModulesDir)\Vidra.Modules.Windowing\bin\$(Configuration)\$(TargetFramework)\Vidra.Modules.Windowing.dll" />
       <VidraModuleAssembly Include="$(VidraModulesDir)\Vidra.Modules.Essentials\bin\$(Configuration)\$(TargetFramework)\Vidra.Modules.Essentials.dll" />
+      <VidraModuleAssembly Include="$(MSBuildThisFileDirectory)..\Vidra.Host.Maui.Core\bin\$(Configuration)\$(TargetFramework)\Vidra.Host.Maui.Core.dll" />
     </ItemGroup>
 
     <Message Importance="high" Text="[Vidra] Generating TypeScript proxies..." />
-    <Exec Command="dotnet run --configuration $(Configuration) --no-build --project &quot;$(VidraCodeGenProject)&quot; -- generate --assembly @(VidraModuleAssembly->'&quot;%(Identity)&quot;', ' ') --output &quot;$(VidraTsOutputDir)&quot; --sdk-import &quot;../singleton.js&quot;"
+    <Exec Command="dotnet run --configuration $(Configuration) --no-build --project &quot;$(VidraCodeGenProject)&quot; -- generate --assembly @(VidraModuleAssembly->'&quot;%(Identity)&quot;', ' ') --output &quot;$(VidraTsOutputDir)&quot; --sdk-import &quot;../singleton.js&quot; --scope core"
           WorkingDirectory="$(MSBuildProjectDirectory)" />
   </Target>
 

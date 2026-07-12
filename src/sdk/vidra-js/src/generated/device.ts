@@ -23,10 +23,10 @@ export class DeviceProxy {
   constructor(private client: VidraClient) {}
 
   getInfo(): Promise<DeviceInfoResult> {
-    return this.client.invoke("device", "getInfo");
+    return this.client.unsafe.invoke("device", "getInfo");
   }
 
   getDisplay(): Promise<DisplayInfoResult> {
-    return this.client.invoke("device", "getDisplay");
+    return this.client.unsafe.invoke("device", "getDisplay");
   }
 }

@@ -27,8 +27,8 @@ const VIDRA_REPO_ROOT = path.resolve(CLI_ROOT, "..", "..", "..");
 const LOCAL_FEED_DIR = path.join(VIDRA_REPO_ROOT, "dist", "packages");
 const LOCAL_CLI_DIR = CLI_ROOT;
 const LOCAL_SDK_DIR = path.join(VIDRA_REPO_ROOT, "src", "sdk", "vidra-js");
-const VIDRA_VERSION = "0.2.2";
-const SDK_VERSION = "0.1.0";
+const VIDRA_VERSION = "0.3.0";
+const SDK_VERSION = "0.2.0";
 
 const main = async (): Promise<void> => {
   console.log();

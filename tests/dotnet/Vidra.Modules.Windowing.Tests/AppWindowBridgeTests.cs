@@ -27,8 +27,9 @@ public sealed class AppWindowAttributeTests
     [Fact]
     public void AppWindowEvents_Contains_Expected_Identifiers()
     {
-        AppWindowEvents.Resized.Should().Be("appWindow.resized");
-        AppWindowEvents.StateChanged.Should().Be("appWindow.stateChanged");
+        AppWindowEvents.Resized.Contract.Should().Be("appWindow");
+        AppWindowEvents.Resized.Member.Should().Be("resized");
+        AppWindowEvents.StateChanged.Member.Should().Be("stateChanged");
     }
 }
 
@@ -48,8 +49,8 @@ public sealed class AppWindowBridgeTests
         var request = BridgeSerializer.Serialize(new BridgeRequest
         {
             Id = Guid.NewGuid().ToString("N"),
-            Module = "appWindow",
-            Method = method,
+            Contract = "appWindow",
+            Member = method,
             Payload = payload is null
                 ? null
                 : JsonSerializer.SerializeToElement(payload, BridgeSerializer.Default),
@@ -95,11 +96,11 @@ public sealed class AppWindowBridgeTests
         // The module throws synchronously from DimensionValidation before any
         // await, so reflection-invoke wraps the exception in a
         // TargetInvocationException. The dispatcher surfaces it as
-        // MODULE_ERROR without unwrapping the inner message; we assert the
+        // NATIVE_MEMBER_ERROR without unwrapping the inner message; we assert the
         // observable behavior, not the wrapper message.
         var response = await InvokeAsync("setSize", new { width = 0, height = 100 });
         response.GetProperty("success").GetBoolean().Should().BeFalse();
-        response.GetProperty("error").GetProperty("code").GetString().Should().Be("MODULE_ERROR");
+        response.GetProperty("error").GetProperty("code").GetString().Should().Be("NATIVE_MEMBER_ERROR");
     }
 
     [Fact]
@@ -115,6 +116,6 @@ public sealed class AppWindowBridgeTests
     {
         var response = await InvokeAsync("configure", new { width = -10 });
         response.GetProperty("success").GetBoolean().Should().BeFalse();
-        response.GetProperty("error").GetProperty("code").GetString().Should().Be("MODULE_ERROR");
+        response.GetProperty("error").GetProperty("code").GetString().Should().Be("NATIVE_MEMBER_ERROR");
     }
 }

@@ -9,18 +9,26 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <VidraContractScope>Core</VidraContractScope>
 
     <PackageId>Vidra.Hosting.Maui</PackageId>
-    <Version>0.2.2</Version>
+    <Version>0.3.0</Version>
     <Description>MAUI host infrastructure for Vidra — WebView bridge, DI extensions, and base page.</Description>
   </PropertyGroup>
 
   <ItemGroup>
+    <CompilerVisibleProperty Include="VidraContractScope" />
     <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\bridge\Vidra.Bridge\Vidra.Bridge.csproj" />
+    <ProjectReference Include="..\..\tools\Vidra.CodeGen.Generator\Vidra.CodeGen.Generator.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\tools\Vidra.CodeGen.Model\Vidra.CodeGen.Model.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\modules\Vidra.Modules.FileSystem\Vidra.Modules.FileSystem.csproj" />
     <ProjectReference Include="..\..\modules\Vidra.Modules.Dialogs\Vidra.Modules.Dialogs.csproj" />
     <ProjectReference Include="..\..\modules\Vidra.Modules.Clipboard\Vidra.Modules.Clipboard.csproj" />

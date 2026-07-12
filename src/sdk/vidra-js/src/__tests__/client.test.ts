@@ -36,7 +36,7 @@ const dispatchReverse = (request: ReverseRequest): void => {
   (window as any).__vidra_invoke(request);
 };
 
-describe("VidraClient.invoke", () => {
+describe("VidraClient unsafe invoke", () => {
   let transport: MockTransport;
   let client: VidraClient;
 
@@ -48,18 +48,18 @@ describe("VidraClient.invoke", () => {
   it("resolves with success data", async () => {
     transport.onSend = (req) => deliver({ id: req.id, success: true, data: { text: "hi" } });
 
-    const result = await client.invoke<{ text: string }>("echo", "ping", { text: "hi" });
+    const result = await client.unsafe.invoke<{ text: string }>("echo", "ping", { text: "hi" });
     expect(result).toEqual({ text: "hi" });
   });
 
   it("sends the request through the transport", async () => {
     transport.onSend = (req) => deliver({ id: req.id, success: true });
-    await client.invoke("echo", "ping", { n: 1 });
+    await client.unsafe.invoke("echo", "ping", { n: 1 });
 
     expect(transport.sent).toHaveLength(1);
     expect(transport.sent[0]).toMatchObject({
-      module: "echo",
-      method: "ping",
+      contract: "echo",
+      member: "ping",
       payload: { n: 1 },
     });
     expect(transport.sent[0].id).toMatch(/^req_/);
@@ -70,22 +70,24 @@ describe("VidraClient.invoke", () => {
       deliver({
         id: req.id,
         success: false,
-        error: { code: "MODULE_NOT_FOUND", message: "No module 'x'" },
+        error: { code: "NATIVE_CONTRACT_NOT_FOUND", message: "No native contract 'x'" },
       });
 
-    await expect(client.invoke("x", "y")).rejects.toThrow("[MODULE_NOT_FOUND] No module 'x'");
+    await expect(client.unsafe.invoke("x", "y")).rejects.toThrow(
+      "[NATIVE_CONTRACT_NOT_FOUND] No native contract 'x'",
+    );
   });
 
   it("rejects with generic message if error body missing", async () => {
     transport.onSend = (req) => deliver({ id: req.id, success: false });
 
-    await expect(client.invoke("x", "y")).rejects.toThrow("Unknown native error");
+    await expect(client.unsafe.invoke("x", "y")).rejects.toThrow("Unknown native error");
   });
 
   it("rejects with timeout if no response arrives", async () => {
     vi.useFakeTimers();
     const clientWithTimeout = new VidraClient({ transport, timeout: 50 });
-    const promise = clientWithTimeout.invoke("slow", "op");
+    const promise = clientWithTimeout.unsafe.invoke("slow", "op");
 
     vi.advanceTimersByTime(51);
     await expect(promise).rejects.toThrow(/Timeout after 50ms for slow\.op/);
@@ -99,7 +101,7 @@ describe("VidraClient.invoke", () => {
       setTimeout(() => deliver({ id: req.id, success: true, data: "ok" }), 0);
     };
 
-    const result = await client.invoke("echo", "ping").then((r) => {
+    const result = await client.unsafe.invoke("echo", "ping").then((r) => {
       spy(r);
       return r;
     });
@@ -120,10 +122,10 @@ describe("VidraClient events", () => {
 
   it("delivers events to subscribed handlers", () => {
     const handler = vi.fn();
-    client.on<{ x: number }>("tick", handler);
+    client.unsafe.on<{ x: number }>("test", "tick", handler);
 
-    dispatchEvent({ event: "tick", data: { x: 1 } });
-    dispatchEvent({ event: "tick", data: { x: 2 } });
+    dispatchEvent({ contract: "test", member: "tick", payload: { x: 1 } });
+    dispatchEvent({ contract: "test", member: "tick", payload: { x: 2 } });
 
     expect(handler).toHaveBeenCalledTimes(2);
     expect(handler).toHaveBeenNthCalledWith(1, { x: 1 });
@@ -133,20 +135,20 @@ describe("VidraClient events", () => {
   it("supports multiple handlers per event", () => {
     const a = vi.fn();
     const b = vi.fn();
-    client.on("tick", a);
-    client.on("tick", b);
+    client.unsafe.on("test", "tick", a);
+    client.unsafe.on("test", "tick", b);
 
-    dispatchEvent({ event: "tick", data: null });
+    dispatchEvent({ contract: "test", member: "tick", payload: null });
     expect(a).toHaveBeenCalledOnce();
     expect(b).toHaveBeenCalledOnce();
   });
 
   it("returns an unsubscribe function", () => {
     const handler = vi.fn();
-    const off = client.on("tick", handler);
+    const off = client.unsafe.on("test", "tick", handler);
     off();
 
-    dispatchEvent({ event: "tick", data: null });
+    dispatchEvent({ contract: "test", member: "tick", payload: null });
     expect(handler).not.toHaveBeenCalled();
   });
 
@@ -157,10 +159,10 @@ describe("VidraClient events", () => {
     });
     const good = vi.fn();
 
-    client.on("tick", bad);
-    client.on("tick", good);
+    client.unsafe.on("test", "tick", bad);
+    client.unsafe.on("test", "tick", good);
 
-    dispatchEvent({ event: "tick", data: null });
+    dispatchEvent({ contract: "test", member: "tick", payload: null });
 
     expect(bad).toHaveBeenCalled();
     expect(good).toHaveBeenCalled();
@@ -168,7 +170,9 @@ describe("VidraClient events", () => {
   });
 
   it("ignores events that no one is subscribed to", () => {
-    expect(() => dispatchEvent({ event: "unhandled", data: null })).not.toThrow();
+    expect(() =>
+      dispatchEvent({ contract: "test", member: "unhandled", payload: null }),
+    ).not.toThrow();
   });
 });
 
@@ -181,51 +185,68 @@ describe("VidraClient reverse RPC", () => {
     client = new VidraClient({ transport });
   });
 
-  it("responds with HANDLER_NOT_FOUND when no handler is registered", async () => {
-    dispatchReverse({ id: "rev_1", handler: "confirm" });
+  it("responds with JS_HANDLER_NOT_FOUND when no handler is registered", async () => {
+    dispatchReverse({ id: "rev_1", contract: "dialog", member: "confirm" });
     await Promise.resolve();
 
     expect(transport.sentReverse).toHaveLength(1);
     expect(transport.sentReverse[0]).toMatchObject({
       id: "rev_1",
       success: false,
-      error: { code: "HANDLER_NOT_FOUND" },
+      error: { code: "JS_HANDLER_NOT_FOUND" },
     });
   });
 
   it("dispatches matching handlers and returns their result", async () => {
-    client.handle<{ message: string }, boolean>("confirm", async () => true);
-    dispatchReverse({ id: "rev_2", handler: "confirm", payload: { message: "?" } });
+    client.unsafe.handle<{ message: string }, boolean>(
+      "dialog",
+      "confirm",
+      async () => true,
+    );
+    dispatchReverse({
+      id: "rev_2",
+      contract: "dialog",
+      member: "confirm",
+      payload: { message: "?" },
+    });
 
     await vi.waitFor(() => expect(transport.sentReverse).toHaveLength(1));
     expect(transport.sentReverse[0]).toEqual({ id: "rev_2", success: true, data: true });
   });
 
-  it("wraps handler exceptions as HANDLER_ERROR", async () => {
-    client.handle("boom", () => {
+  it("wraps handler exceptions as JS_HANDLER_ERROR", async () => {
+    client.unsafe.handle("test", "boom", () => {
       throw new Error("something broke");
     });
-    dispatchReverse({ id: "rev_3", handler: "boom" });
+    dispatchReverse({ id: "rev_3", contract: "test", member: "boom" });
 
     await vi.waitFor(() => expect(transport.sentReverse).toHaveLength(1));
     expect(transport.sentReverse[0]).toMatchObject({
       id: "rev_3",
       success: false,
-      error: { code: "HANDLER_ERROR", message: "something broke" },
+      error: { code: "JS_HANDLER_ERROR", message: "something broke" },
     });
   });
 
-  it("unsubscribing a handler restores the HANDLER_NOT_FOUND response", async () => {
-    const unsubscribe = client.handle("confirm", () => true);
+  it("unsubscribing a handler restores the JS_HANDLER_NOT_FOUND response", async () => {
+    const unsubscribe = client.unsafe.handle("dialog", "confirm", () => true);
     unsubscribe();
 
-    dispatchReverse({ id: "rev_4", handler: "confirm" });
+    dispatchReverse({ id: "rev_4", contract: "dialog", member: "confirm" });
     await Promise.resolve();
 
     expect(transport.sentReverse[0]).toMatchObject({
       success: false,
-      error: { code: "HANDLER_NOT_FOUND" },
+      error: { code: "JS_HANDLER_NOT_FOUND" },
     });
+  });
+
+  it("rejects duplicate handler registrations", () => {
+    client.unsafe.handle("dialog", "confirm", () => true);
+
+    expect(() =>
+      client.unsafe.handle("dialog", "confirm", () => false),
+    ).toThrow("already registered");
   });
 });
 
@@ -233,12 +254,22 @@ describe("VidraClient.capabilities", () => {
   it("invokes the reserved __bridge.capabilities method", async () => {
     const transport = new MockTransport();
     transport.onSend = (req) =>
-      deliver({ id: req.id, success: true, data: { echo: ["ping"] } });
+      deliver({
+        id: req.id,
+        success: true,
+        data: {
+          protocolVersion: 2,
+          nativeContracts: { echo: { methods: ["ping"], events: [] } },
+        },
+      });
     const client = new VidraClient({ transport });
 
     const caps = await client.capabilities();
-    expect(caps).toEqual({ echo: ["ping"] });
-    expect(transport.sent[0]).toMatchObject({ module: "__bridge", method: "capabilities" });
+    expect(caps.nativeContracts.echo.methods).toEqual(["ping"]);
+    expect(transport.sent[0]).toMatchObject({
+      contract: "__bridge",
+      member: "capabilities",
+    });
   });
 });
 
@@ -252,7 +283,53 @@ describe("VidraClient transport selection", () => {
     transport.onSend = (req) => deliver({ id: req.id, success: true });
     const client = new VidraClient({ transport });
 
-    await client.invoke("x", "y");
+    await client.unsafe.invoke("x", "y");
     expect(transport.sent).toHaveLength(1);
+  });
+});
+
+describe("VidraClient protocol negotiation", () => {
+  const emptyFingerprint =
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+  it("accepts matching protocol and manifest fingerprints", () => {
+    new VidraClient({ transport: new MockTransport() });
+
+    expect(() =>
+      (window as any).__vidra_initialize({
+        protocolVersion: 2,
+        coreFingerprint: emptyFingerprint,
+        appFingerprint: emptyFingerprint,
+      }),
+    ).not.toThrow();
+  });
+
+  it("fails visibly when protocol versions differ", () => {
+    new VidraClient({ transport: new MockTransport() });
+
+    expect(() =>
+      (window as any).__vidra_initialize({
+        protocolVersion: 1,
+        coreFingerprint: emptyFingerprint,
+        appFingerprint: emptyFingerprint,
+      }),
+    ).toThrow("Bridge contract mismatch");
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
+      "protocol host=1 sdk=2",
+    );
+  });
+
+  it("compares generated core and app fingerprints", () => {
+    const client = new VidraClient({ transport: new MockTransport() });
+    client.registerGeneratedManifest("core", "core-hash");
+    client.registerGeneratedManifest("app", "app-hash");
+
+    expect(() =>
+      (window as any).__vidra_initialize({
+        protocolVersion: 2,
+        coreFingerprint: "core-hash",
+        appFingerprint: "app-hash",
+      }),
+    ).not.toThrow();
   });
 });

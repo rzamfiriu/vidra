@@ -18,10 +18,10 @@ export class NotificationsProxy {
   constructor(private client: VidraClient) {}
 
   show(args: ShowArgs): Promise<ShowResult> {
-    return this.client.invoke("notifications", "show", args);
+    return this.client.unsafe.invoke("notifications", "show", args);
   }
 
   requestPermission(): Promise<RequestPermissionResult> {
-    return this.client.invoke("notifications", "requestPermission");
+    return this.client.unsafe.invoke("notifications", "requestPermission");
   }
 }

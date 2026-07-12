@@ -21,10 +21,10 @@ export class LauncherProxy {
   constructor(private client: VidraClient) {}
 
   open(args: LauncherOpenArgs): Promise<LauncherOpenResult> {
-    return this.client.invoke("launcher", "open", args);
+    return this.client.unsafe.invoke("launcher", "open", args);
   }
 
   canOpen(args: LauncherCanOpenArgs): Promise<LauncherCanOpenResult> {
-    return this.client.invoke("launcher", "canOpen", args);
+    return this.client.unsafe.invoke("launcher", "canOpen", args);
   }
 }

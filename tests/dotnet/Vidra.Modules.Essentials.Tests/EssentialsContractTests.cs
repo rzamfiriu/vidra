@@ -29,6 +29,19 @@ public sealed class ConnectivitySerializationTests
         back!.Access.Should().Be(NetworkAccess.Internet);
         back.Profiles.Should().Equal(ConnectionProfile.Ethernet);
     }
+
+    [Fact]
+    public void Generated_Event_Token_Serializes_Without_Runtime_Reflection()
+    {
+        var status = new ConnectivityStatus(
+            NetworkAccess.Internet,
+            new[] { ConnectionProfile.Wifi });
+
+        var payload = ConnectivityEvents.Changed.SerializePayload(status);
+
+        payload.GetProperty("access").GetString().Should().Be("internet");
+        payload.GetProperty("profiles")[0].GetString().Should().Be("wifi");
+    }
 }
 
 public sealed class BatterySerializationTests
@@ -95,8 +108,8 @@ public sealed class ConnectivityDispatcherTests
         var request = BridgeSerializer.Serialize(new BridgeRequest
         {
             Id = "c1",
-            Module = "connectivity",
-            Method = "getStatus",
+            Contract = "connectivity",
+            Member = "getStatus",
         });
 
         var response = JsonSerializer.Deserialize<JsonElement>(await dispatcher.DispatchAsync(request));

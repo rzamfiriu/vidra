@@ -10,6 +10,7 @@ import {
 import { parseArgs } from "../utils.js";
 import { formatBuildError } from "../exec.js";
 import { signMacAppBundleIfPossible } from "../signing.js";
+import { selectDevServerUrl } from "../dev-port.js";
 import {
   ensureMauiWorkload,
   looksLikeMissingWorkload,
@@ -78,7 +79,7 @@ const startSession = async (
   const targetName = (args["target"] as string) || detectPlatform();
   const verbose = !!args["verbose"];
   let hotReload = opts.hotReloadDefault && !args["no-hot-reload"];
-  const viteUrl = process.env.VIDRA_DEV_URL || "http://localhost:5173";
+  let viteUrl = process.env.VIDRA_DEV_URL || "http://localhost:5173";
   const target = TARGETS[targetName as DevTargetName];
 
   if (!target) {
@@ -119,6 +120,10 @@ const startSession = async (
       );
       console.log(fixLine(blocker.fix));
     }
+  }
+
+  if (opts.vite) {
+    viteUrl = await selectDevServerUrl(viteUrl);
   }
 
   const session = new DevSession(project, target, viteUrl, verbose, {
@@ -171,6 +176,15 @@ export const dotnetWatchEnv = (devUrl: string): Record<string, string> => ({
   DOTNET_WATCH_SUPPRESS_EMOJIS: "1",
   DOTNET_WATCH_SUPPRESS_LAUNCH_BROWSER: "1",
 });
+
+export const buildViteArgs = (devUrl: string): string[] => [
+  "run",
+  "dev",
+  "--",
+  "--port",
+  new URL(devUrl).port,
+  "--strictPort",
+];
 
 export type WatchLineEvent = "appStarted" | "appWaiting" | "buildBlocked" | null;
 
@@ -331,7 +345,7 @@ class DevSession {
     // Node refuses to `spawn` `.cmd`/`.bat` files directly (it throws
     // `spawn EINVAL`) unless they're run through a shell. `taskkill /T` in
     // killChild already tears down the wrapping cmd.exe and its children.
-    const vite = spawn(NPM_COMMAND, ["run", "dev"], {
+    const vite = spawn(NPM_COMMAND, buildViteArgs(this.viteUrl), {
       cwd: this.project.uiDir,
       stdio: ["ignore", "pipe", "pipe"],
       shell: process.platform === "win32",

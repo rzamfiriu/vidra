@@ -1,5 +1,5 @@
 {
   "id": "req_2",
-  "module": "does-not-exist",
-  "method": "noop"
+  "contract": "does-not-exist",
+  "member": "noop"
 }

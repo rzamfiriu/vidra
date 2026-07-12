@@ -1,3 +1,5 @@
+using Vidra.Bridge;
+
 namespace Vidra.Modules.Essentials;
 
 /// <summary>Module-owned mirror of MAUI's battery charge state.</summary>
@@ -35,7 +37,9 @@ public record BatteryStatus(
     EnergySaverStatus EnergySaver
 );
 
-public static class BatteryEvents
+[BridgeEventContract("battery")]
+public interface IBatteryEvents
 {
-    public const string Changed = "battery.changed";
+    [BridgeEvent("changed")]
+    void Changed(BatteryStatus payload);
 }

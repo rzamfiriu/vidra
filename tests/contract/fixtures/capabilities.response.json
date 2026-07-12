@@ -2,6 +2,12 @@
   "id": "cap_1",
   "success": true,
   "data": {
-    "echo": ["ping", "fail"]
+    "protocolVersion": 2,
+    "nativeContracts": {
+      "echo": {
+        "methods": ["ping", "fail"],
+        "events": []
+      }
+    }
   }
 }

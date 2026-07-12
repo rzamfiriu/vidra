@@ -16,6 +16,6 @@ export class ShareProxy {
   constructor(private client: VidraClient) {}
 
   shareText(args: ShareTextArgs): Promise<ShareResult> {
-    return this.client.invoke("share", "shareText", args);
+    return this.client.unsafe.invoke("share", "shareText", args);
   }
 }

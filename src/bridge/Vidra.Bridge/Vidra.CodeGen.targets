@@ -7,7 +7,7 @@
       <Import Project="path/to/Vidra.CodeGen.targets" />
 
     Configurable properties (set before the Import):
-      VidraTsOutputDir      - Where to write .ts files (default: $(MSBuildProjectDirectory)/generated)
+      VidraTsOutputDir      - Required output directory for generated .ts files
       VidraSdkImport        - The import path for @vidra-dev/sdk (default: @vidra-dev/sdk)
       VidraCodeGenProject   - Path to the Vidra.CodeGen.csproj (auto-detected in monorepo)
       VidraGenerateTs       - Set to "false" to disable codegen (default: true)
@@ -15,23 +15,37 @@
 
   <PropertyGroup>
     <VidraGenerateTs Condition="'$(VidraGenerateTs)' == ''">true</VidraGenerateTs>
-    <VidraTsOutputDir Condition="'$(VidraTsOutputDir)' == ''">$(MSBuildProjectDirectory)/generated</VidraTsOutputDir>
     <VidraSdkImport Condition="'$(VidraSdkImport)' == ''">@vidra-dev/sdk</VidraSdkImport>
+    <VidraContractScope Condition="'$(VidraContractScope)' == ''">app</VidraContractScope>
     <VidraCodeGenProject Condition="'$(VidraCodeGenProject)' == ''">$(MSBuildThisFileDirectory)/../../tools/Vidra.CodeGen/Vidra.CodeGen.csproj</VidraCodeGenProject>
+    <VidraCodeGenDll Condition="'$(VidraCodeGenDll)' == ''">$(MSBuildThisFileDirectory)../tools/net10.0/any/Vidra.CodeGen.dll</VidraCodeGenDll>
+    <VidraCodeGenCommand Condition="Exists('$(VidraCodeGenDll)')">dotnet exec &quot;$(VidraCodeGenDll)&quot;</VidraCodeGenCommand>
+    <VidraCodeGenCommand Condition="'$(VidraCodeGenCommand)' == ''">dotnet run --configuration $(Configuration) --no-build --project &quot;$(VidraCodeGenProject)&quot; --</VidraCodeGenCommand>
   </PropertyGroup>
+
+  <ItemGroup>
+    <CompilerVisibleProperty Include="VidraContractScope" />
+  </ItemGroup>
 
   <Target Name="VidraCodeGen"
           AfterTargets="Build"
-          Condition="'$(VidraGenerateTs)' == 'true' AND '$(TargetFramework)' != ''">
+          Condition="'$(VidraGenerateTs)' == 'true' AND '$(TargetFramework)' != '' AND '$(VidraTsOutputDir)' != ''">
 
     <Message Importance="high" Text="[Vidra] Generating TypeScript proxies from $(TargetPath)..." />
 
-    <Exec Command="dotnet run --configuration $(Configuration) --no-build --project &quot;$(VidraCodeGenProject)&quot; -- generate --assembly &quot;$(TargetPath)&quot; --output &quot;$(VidraTsOutputDir)&quot; --sdk-import &quot;$(VidraSdkImport)&quot;"
+    <Exec Command="$(VidraCodeGenCommand) generate --assembly &quot;$(TargetPath)&quot; --output &quot;$(VidraTsOutputDir)&quot; --sdk-import &quot;$(VidraSdkImport)&quot; --scope &quot;$(VidraContractScope)&quot;"
           WorkingDirectory="$(MSBuildProjectDirectory)"
           IgnoreExitCode="false" />
 
     <Message Importance="high" Text="[Vidra] TypeScript proxies written to $(VidraTsOutputDir)" />
 
+  </Target>
+
+  <Target Name="VidraCodeGenCheck"
+          Condition="'$(VidraGenerateTs)' == 'true' AND '$(TargetFramework)' != '' AND '$(VidraTsOutputDir)' != ''">
+    <Exec Command="$(VidraCodeGenCommand) generate --assembly &quot;$(TargetPath)&quot; --output &quot;$(VidraTsOutputDir)&quot; --sdk-import &quot;$(VidraSdkImport)&quot; --scope &quot;$(VidraContractScope)&quot; --check"
+          WorkingDirectory="$(MSBuildProjectDirectory)"
+          IgnoreExitCode="false" />
   </Target>
 
 </Project>

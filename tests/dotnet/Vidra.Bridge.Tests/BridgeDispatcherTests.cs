@@ -23,8 +23,8 @@ public sealed class BridgeDispatcherTests
         var request = BridgeSerializer.Serialize(new BridgeRequest
         {
             Id = "req_1",
-            Module = "echo",
-            Method = "ping",
+            Contract = "echo",
+            Member = "ping",
             Payload = JsonSerializer.SerializeToElement(new { text = "hi" }, BridgeSerializer.Default),
         });
 
@@ -47,8 +47,8 @@ public sealed class BridgeDispatcherTests
         var request = BridgeSerializer.Serialize(new BridgeRequest
         {
             Id = "req_2",
-            Module = "ECHO",
-            Method = "ping",
+            Contract = "ECHO",
+            Member = "ping",
             Payload = JsonSerializer.SerializeToElement(new { text = "yo" }, BridgeSerializer.Default),
         });
 
@@ -63,14 +63,14 @@ public sealed class BridgeDispatcherTests
         var request = BridgeSerializer.Serialize(new BridgeRequest
         {
             Id = "req_3",
-            Module = "missing",
-            Method = "noop",
+            Contract = "missing",
+            Member = "noop",
         });
 
         var response = Deserialize(await dispatcher.DispatchAsync(request));
         response.Id.Should().Be("req_3");
         response.Success.Should().BeFalse();
-        response.Error!.Code.Should().Be("MODULE_NOT_FOUND");
+        response.Error!.Code.Should().Be("NATIVE_CONTRACT_NOT_FOUND");
         response.Error.Message.Should().Contain("missing");
     }
 
@@ -102,13 +102,13 @@ public sealed class BridgeDispatcherTests
         var request = BridgeSerializer.Serialize(new BridgeRequest
         {
             Id = "req_4",
-            Module = "echo",
-            Method = "fail",
+            Contract = "echo",
+            Member = "fail",
         });
 
         var response = Deserialize(await dispatcher.DispatchAsync(request));
         response.Success.Should().BeFalse();
-        response.Error!.Code.Should().Be("MODULE_ERROR");
+        response.Error!.Code.Should().Be("NATIVE_MEMBER_ERROR");
         response.Error.Message.Should().Be("boom");
     }
 
@@ -119,8 +119,8 @@ public sealed class BridgeDispatcherTests
         var request = BridgeSerializer.Serialize(new BridgeRequest
         {
             Id = "cap_1",
-            Module = "__bridge",
-            Method = "capabilities",
+            Contract = "__bridge",
+            Member = "capabilities",
         });
 
         var response = Deserialize(await dispatcher.DispatchAsync(request));
@@ -138,8 +138,22 @@ public sealed class BridgeDispatcherTests
         var dispatcher = CreateDispatcher(new EchoModule());
         var caps = dispatcher.GetCapabilities();
 
-        caps.Should().ContainKey("echo");
-        caps["echo"].Should().Contain(new[] { "ping", "fail", "defaults", "fireAndForget" });
+        caps.ProtocolVersion.Should().Be(BridgeProtocol.Version);
+        caps.NativeContracts.Should().ContainKey("echo");
+        caps.NativeContracts["echo"].Methods
+            .Should().Contain(new[] { "ping", "fail", "defaults", "fireAndForget" });
+    }
+
+    [Fact]
+    public void GetCapabilities_Merges_Event_Only_Contracts()
+    {
+        var dispatcher = CreateDispatcher();
+        dispatcher.RegisterEvents("runtime", "hotReloaded");
+
+        var caps = dispatcher.GetCapabilities();
+
+        caps.NativeContracts["runtime"].Methods.Should().BeEmpty();
+        caps.NativeContracts["runtime"].Events.Should().Equal("hotReloaded");
     }
 
     [Fact]
@@ -150,6 +164,6 @@ public sealed class BridgeDispatcherTests
         dispatcher.Register(new EchoModule());
 
         var caps = dispatcher.GetCapabilities();
-        caps.Should().HaveCount(1);
+        caps.NativeContracts.Should().HaveCount(1);
     }
 }

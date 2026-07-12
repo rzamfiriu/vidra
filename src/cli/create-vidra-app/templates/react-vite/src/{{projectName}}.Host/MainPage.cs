@@ -22,7 +22,7 @@ public class MainPage : VidraPage
     {
         try
         {
-            var count = await Bridge.CallJsAsync<int>("counter.increment");
+            var count = await Bridge.Js().Counter.IncrementAsync();
             System.Diagnostics.Debug.WriteLine($"[MainPage] Counter is now {count}");
         }
         catch (Exception ex)

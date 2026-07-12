@@ -34,7 +34,7 @@ The bridge is bidirectional — see the message round-trip in
 
 ## Host Model
 
-- **Development**: the WebView loads `http://localhost:5173` (or a configurable `VIDRA_DEV_URL`), allowing Vite HMR and standard browser dev tools.
+- **Development**: the WebView loads `http://localhost:5173` (or a configurable `VIDRA_DEV_URL`), allowing Vite HMR and standard browser dev tools. `vidra dev` launches the host under `dotnet watch`, so supported C# edits hot reload into the running process (rude edits rebuild + relaunch automatically); after each applied delta the host pushes a `vidra.hotReloaded` bridge event so the UI can react. On toolchains without `dotnet watch` support for the target, the CLI falls back to a one-shot build + direct launch (`vidra dev --no-hot-reload` forces this).
 - **Production**: the WebView loads bundled static assets from the app package (`Resources/Raw/wwwroot/index.html`).
 
 The same bridge works in both modes. For JS→C# traffic it prefers a first-class
@@ -52,8 +52,8 @@ All communication uses JSON envelopes.
 ```json
 {
   "id": "req_1_1710000000000",
-  "module": "filesystem",
-  "method": "readText",
+  "contract": "filesystem",
+  "member": "readText",
   "payload": { "path": "/tmp/f.txt" }
 }
 ```
@@ -72,24 +72,31 @@ All communication uses JSON envelopes.
 
 ```json
 {
-  "event": "app.resume",
-  "data": {}
+  "contract": "connectivity",
+  "member": "changed",
+  "payload": { "access": "internet", "profiles": ["wifi"] }
 }
 ```
 
-## Module System
+## Contract System
 
-Native modules implement `IBridgeModule` and are registered in `MauiProgram.cs`. Each module declares a name and a list of supported methods. The `BridgeDispatcher` routes incoming requests by module name.
+Vidra has three safe contract directions:
+
+- **Native contracts** are implemented in C# and invoked by JavaScript.
+- **Event contracts** are declared and emitted by C# for JavaScript subscribers.
+- **JS contracts** are declared in C#, implemented in JavaScript, and invoked by C#.
+
+Native modules still implement `IBridgeModule` and are registered in `MauiProgram.cs`. Protocol v2 routes all three flows by explicit `contract` and `member` fields.
 
 ## JS SDK
 
-The TypeScript SDK (`@vidra-dev/sdk`) wraps the transport layer and exposes `invoke()`, `on()`, and `capabilities()`. It auto-detects whether it is running inside a native host or a plain browser and falls back to console logging in browser-only mode.
+The TypeScript SDK (`@vidra-dev/sdk`) wraps the transport layer and exposes generated native proxies, generated event subscriptions, generated JS-handler registries, and `capabilities()`. Dynamic traffic is isolated under `vidra.unsafe.invoke/on/handle`. The SDK auto-detects whether it is running inside a native host or a plain browser and falls back to console logging in browser-only mode.
 
-On top of the low-level `invoke()`, the SDK ships **generated, typed proxies** for each built-in module (`filesystem`, `dialogs`, `clipboard`, `notifications`, `appWindow`, `app`) plus the MAUI Essentials modules (`secureStorage`, `preferences`, `device`, `share`, `browser`, `launcher`, `email`, `filePicker`, `textToSpeech`, `connectivity`, `battery`, `essentials`). These are emitted by `vidra-codegen` from the C# module definitions, so the JS argument and result types stay in lockstep with the native contract (see the full list in [capabilities.md](./capabilities.md)). Event-emitting modules (`connectivity`, `battery`) implement `IBridgeEventSource` and are attached to the JS callback channel by `VidraPage`. See [Type Safety & Codegen](#type-safety--codegen).
+The SDK ships **generated, typed proxies** for each built-in module (`filesystem`, `dialogs`, `clipboard`, `notifications`, `appWindow`, `app`) plus the MAUI Essentials modules (`secureStorage`, `preferences`, `device`, `share`, `browser`, `launcher`, `email`, `filePicker`, `textToSpeech`, `connectivity`, `battery`, `essentials`). Event methods such as `connectivity.onChanged`, `battery.onChanged`, `appWindow.onResized`, and `runtime.onHotReloaded` are emitted into the same proxies. See the full list in [capabilities.md](./capabilities.md).
 
 ## Type Safety & Codegen
 
-C# is the single source of truth for the bridge contract. Each native module is a plain class annotated with `[BridgeModule]` / `[BridgeMethod]`, and its argument and result types are ordinary records:
+C# is the single source of truth for every safe bridge contract. Native modules use `[BridgeModule]` / `[BridgeMethod]`; event and JS contracts use annotated interfaces:
 
 ```csharp
 public record ReadTextArgs(string Path);
@@ -101,12 +108,26 @@ public sealed class FileSystemModule : BridgeModuleBase
     [BridgeMethod("readText")]
     public Task<ReadTextResult> ReadTextAsync(ReadTextArgs args, CancellationToken ct) { /* ... */ }
 }
+
+[BridgeEventContract("connectivity")]
+public interface IConnectivityEvents
+{
+    [BridgeEvent("changed")]
+    void Changed(ConnectivityStatus payload);
+}
+
+[JsContract("counter")]
+public interface ICounterJs
+{
+    [JsMethod("increment")]
+    Task<int> IncrementAsync();
+}
 ```
 
-`vidra-codegen` (`src/tools/Vidra.CodeGen`) scans the compiled module assemblies with `MetadataLoadContext` — no MAUI runtime required — and emits:
+The Roslyn generator runs during compilation and emits typed event tokens, `Bridge.Js()` clients, AOT-safe JSON codecs, diagnostics, and an immutable contract manifest registration. `vidra-codegen` (`src/tools/Vidra.CodeGen`) then scans compiled assemblies with `MetadataLoadContext` and emits:
 
-- `manifest.json`: the module / method / type manifest.
-- One typed TypeScript proxy per module (e.g. `filesystem.ts`) plus a barrel `index.ts`.
+- `manifest.json`: native methods, events, JS methods, schemas, and a deterministic fingerprint.
+- Typed TypeScript native/event proxies and JS-handler registries plus a barrel `index.ts`.
 
 C# types map to idiomatic TypeScript:
 
@@ -131,11 +152,13 @@ export interface ReadTextResult { content: string; }
 
 export class FilesystemProxy {
   readText(args: ReadTextArgs): Promise<ReadTextResult> {
-    return this.client.invoke("filesystem", "readText", args);
+    return this.client.unsafe.invoke("filesystem", "readText", args);
   }
 }
 ```
 
-Enums cross the wire as their **camelCase string name**, not a numeric value: the runtime serializer registers `JsonStringEnumConverter(JsonNamingPolicy.CamelCase)` so the actual JSON matches the generated string-literal unions. Nullable values (`int?`, `string?`) are omitted from the JSON when null, which the emitter reflects as optional `field?: T | null`.
+Enums cross the wire as their **camelCase string name**, not a numeric value. Native serialization and generated AOT codecs share that policy, so JSON matches the generated string-literal unions. Nullable values (`int?`, `string?`) are omitted when null, which the emitter reflects as optional `field?: T | null`.
 
-Generation runs automatically on build via the `Vidra.CodeGen.targets` MSBuild target (`AfterTargets="Build"`), so the SDK's `src/generated/` proxies stay in sync with the native modules. Because both sides derive from the same definitions, JS and C# can't silently drift; the emitted output is additionally pinned by snapshot tests (see [testing.md](./testing.md)).
+Built-in contracts are generated into the SDK. App and opted-in third-party contracts are generated into the app’s configured `VidraTsOutputDir` by the packaged `buildTransitive` target. Generated output is deterministic and committed; `VidraCodeGenCheck` fails CI when it is stale.
+
+At WebView startup, protocol version 2 compares separate core and app manifest fingerprints. A mismatched SDK, native package set, or committed app output fails visibly before bridge traffic starts. The supported claim is therefore: **end-to-end typed contracts, with an explicit unsafe escape hatch**.

@@ -1,6 +1,7 @@
 {
   "id": "rev_1",
-  "handler": "confirm",
+  "contract": "dialog",
+  "member": "confirm",
   "payload": {
     "message": "Are you sure?"
   }

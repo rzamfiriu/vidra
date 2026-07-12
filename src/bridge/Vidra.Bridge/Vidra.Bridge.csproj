@@ -7,12 +7,35 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <PackageId>Vidra.Bridge</PackageId>
-    <Version>0.2.2</Version>
+    <Version>0.3.0</Version>
     <Description>Bridge dispatcher and module contracts for Vidra.</Description>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.Text.Json" Version="9.0.0" />
+    <None Include="Vidra.CodeGen.targets"
+          Pack="true"
+          PackagePath="buildTransitive/Vidra.Bridge.targets" />
+    <None Include="../../tools/Vidra.CodeGen.Generator/bin/$(Configuration)/netstandard2.0/Vidra.CodeGen.Generator.dll"
+          Pack="true"
+          PackagePath="analyzers/dotnet/cs" />
+    <None Include="../../tools/Vidra.CodeGen.Model/bin/$(Configuration)/netstandard2.0/Vidra.CodeGen.Model.dll"
+          Pack="true"
+          PackagePath="analyzers/dotnet/cs" />
+    <None Include="../../tools/Vidra.CodeGen/bin/$(Configuration)/net10.0/Vidra.CodeGen;
+                   ../../tools/Vidra.CodeGen/bin/$(Configuration)/net10.0/Vidra.CodeGen.dll;
+                   ../../tools/Vidra.CodeGen/bin/$(Configuration)/net10.0/Vidra.CodeGen.deps.json;
+                   ../../tools/Vidra.CodeGen/bin/$(Configuration)/net10.0/Vidra.CodeGen.runtimeconfig.json;
+                   ../../tools/Vidra.CodeGen/bin/$(Configuration)/net10.0/Vidra.CodeGen.Model.dll;
+                   ../../tools/Vidra.CodeGen/bin/$(Configuration)/net10.0/System.Reflection.MetadataLoadContext.dll"
+          Pack="true"
+          PackagePath="tools/net10.0/any/%(Filename)%(Extension)" />
   </ItemGroup>
+
+  <Target Name="BuildVidraCodeGenPackAssets" BeforeTargets="GenerateNuspec">
+    <MSBuild Projects="../../tools/Vidra.CodeGen.Generator/Vidra.CodeGen.Generator.csproj;
+                       ../../tools/Vidra.CodeGen/Vidra.CodeGen.csproj"
+             Targets="Build"
+             Properties="Configuration=$(Configuration)" />
+  </Target>
 
 </Project>

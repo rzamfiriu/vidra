@@ -28,9 +28,9 @@ Tauri you never touch Rust; unlike MAUI, Avalonia, or WPF you never touch XAML.
 
 - **Stay in C#/.NET.** Your native layer, domain logic, and NuGet libraries are all C#. No second backend language for the team to learn.
 - **Bring any web framework.** The UI is a standard web app rendered in a native WebView: React, Vue, Svelte, Solid, or plain HTML. No XAML, no Razor lock-in.
-- **Type-safe by codegen.** C# modules are the single source of truth; `vidra-codegen` emits matching TypeScript proxies on every build, so JS and native can't silently drift.
+- **End-to-end typed contracts.** Native methods, event contracts, and JS contracts are declared in C#; generated C#/TypeScript surfaces and startup fingerprints prevent silent drift. Dynamic traffic remains available only through an explicit unsafe escape hatch.
 - **Lightweight.** Uses the OS-native WebView (WKWebView / WebView2) instead of bundling Chromium, keeping apps small and memory-light.
-- **One bridge, both ways.** Typed `invoke()`, native event push, and reverse-RPC all flow over a single JSON bridge.
+- **One bridge, both ways.** Native calls, event contracts, and JS contracts all flow over one versioned JSON bridge.
 
 ## Quick Start
 
@@ -48,7 +48,7 @@ npm run dev
 ```
 
 `npm run dev` (which runs `vidra dev`) starts Vite and the native host for your current
-OS together, with hot reload on the web side.
+OS together, with Vite HMR and supported C# hot reload.
 
 ### Prerequisites
 
@@ -78,16 +78,17 @@ npx vidra build --target macos  # build & package a specific target
 
 A single WebView hosts your web UI; the .NET MAUI host owns all native capability. Calls
 flow JS → C# as JSON requests over a native message channel (with a custom-scheme
-fallback), while responses, native events, and reverse-RPC flow back over the same
-bridge. Because the C# modules' argument/result types are the source of truth, the SDK's
-TypeScript proxies are generated to match.
+fallback), while responses, event contracts, and JS contracts flow back over the same
+bridge. Protocol v2 addresses all traffic by contract/member and verifies generated core
+and app manifest fingerprints when the WebView starts.
 
 See **[Architecture](docs/architecture.md)** for the full diagram and host model, and
 **[Interop Protocol](docs/interop-protocol.md)** for the wire format.
 
 ## Type safety via codegen
 
-Native modules are plain C# classes; their argument/result records define every call:
+Native modules are plain C# classes; event and JS contracts are C# interfaces. Their
+payload/result records define every safe cross-language operation:
 
 ```csharp
 [BridgeModule("filesystem")]
@@ -97,16 +98,26 @@ public sealed class FileSystemModule : BridgeModuleBase
     public async Task<ReadTextResult> ReadTextAsync(ReadTextArgs args, CancellationToken ct)
         => new(await File.ReadAllTextAsync(args.Path, ct));
 }
+
+[JsContract("counter")]
+public interface ICounterJs
+{
+    [JsMethod("increment")]
+    Task<int> IncrementAsync();
+}
 ```
 
-On build, `vidra-codegen` scans the compiled assemblies and emits matching, fully-typed
-TypeScript proxies so your editor autocompletes both arguments and results:
+During compilation, a Roslyn generator emits AOT-safe event tokens, `Bridge.Js()` clients,
+codecs, and diagnostics. After compilation, `vidra-codegen` emits matching TypeScript
+native/event proxies and JS-handler registries:
 
 ```ts
 import { filesystem } from "@vidra-dev/sdk";
+import { counterHandlers } from "./generated/index.js";
 
 // `path` is required and typo-checked; `content` is inferred as `string`.
 const { content } = await filesystem.readText({ path: "/tmp/notes.txt" });
+counterHandlers.increment(() => 1);
 ```
 
 Full pipeline and C# → TS type mapping: **[Type safety & codegen →](docs/architecture.md#type-safety--codegen)**
@@ -125,7 +136,7 @@ Full pipeline and C# → TS type mapping: **[Type safety & codegen →](docs/arc
 | Package | Description |
 |---------|-------------|
 | [`create-vidra-app`](https://www.npmjs.com/package/create-vidra-app) | Scaffolder + the `vidra` CLI (dev / run / build / doctor) |
-| [`@vidra-dev/sdk`](https://www.npmjs.com/package/@vidra-dev/sdk) | Framework-agnostic TypeScript SDK and generated proxies |
+| [`@vidra-dev/sdk`](https://www.npmjs.com/package/@vidra-dev/sdk) | Framework-agnostic runtime plus generated native/event proxies |
 
 ## Targets
 

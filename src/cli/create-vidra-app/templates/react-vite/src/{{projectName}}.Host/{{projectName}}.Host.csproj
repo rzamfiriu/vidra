@@ -42,6 +42,7 @@
       preserved.
     -->
     <MtouchLink Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst' And '$(Configuration)' == 'Debug'">None</MtouchLink>
+    <VidraTsOutputDir>$(MSBuildProjectDirectory)/../../ui/src/generated</VidraTsOutputDir>
   </PropertyGroup>
 
   <ItemGroup>

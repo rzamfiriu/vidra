@@ -1,3 +1,5 @@
+using Vidra.Bridge;
+
 namespace Vidra.Modules.Essentials;
 
 /// <summary>Module-owned mirror of MAUI's network access level.</summary>
@@ -22,7 +24,9 @@ public enum ConnectionProfile
 
 public record ConnectivityStatus(NetworkAccess Access, ConnectionProfile[] Profiles);
 
-public static class ConnectivityEvents
+[BridgeEventContract("connectivity")]
+public interface IConnectivityEvents
 {
-    public const string Changed = "connectivity.changed";
+    [BridgeEvent("changed")]
+    void Changed(ConnectivityStatus payload);
 }

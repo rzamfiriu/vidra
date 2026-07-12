@@ -5,6 +5,15 @@ using Vidra.Bridge;
 
 namespace Vidra.Hosting;
 
+public sealed record HotReloadedPayload(string[] UpdatedTypes);
+
+[BridgeEventContract("runtime")]
+public interface IRuntimeEvents
+{
+    [BridgeEvent("hotReloaded")]
+    void HotReloaded(HotReloadedPayload payload);
+}
+
 /// <summary>
 /// Bridges .NET Hot Reload into the web UI. When a `dotnet watch` session
 /// applies a C# metadata delta, the runtime invokes
@@ -19,8 +28,6 @@ namespace Vidra.Hosting;
 /// </remarks>
 public static class HotReloadNotifier
 {
-    internal sealed record HotReloadedPayload(string[] UpdatedTypes);
-
     /// <summary>Invoked by the runtime after a hot reload delta is applied.</summary>
     internal static void UpdateApplication(Type[]? updatedTypes)
     {
@@ -48,11 +55,7 @@ public static class HotReloadNotifier
         {
             try
             {
-                await bridge.SendEventAsync(new BridgeEvent
-                {
-                    Event = "vidra.hotReloaded",
-                    Data = payload,
-                });
+                await bridge.SendEventAsync(RuntimeEvents.HotReloaded, payload);
             }
             catch (Exception ex)
             {

@@ -15,6 +15,6 @@ export class TextToSpeechProxy {
   constructor(private client: VidraClient) {}
 
   speak(args: SpeakArgs): Promise<SpeakResult> {
-    return this.client.invoke("textToSpeech", "speak", args);
+    return this.client.unsafe.invoke("textToSpeech", "speak", args);
   }
 }

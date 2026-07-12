@@ -17,6 +17,6 @@ export class EmailProxy {
   constructor(private client: VidraClient) {}
 
   compose(args: EmailComposeArgs): Promise<EmailComposeResult> {
-    return this.client.invoke("email", "compose", args);
+    return this.client.unsafe.invoke("email", "compose", args);
   }
 }

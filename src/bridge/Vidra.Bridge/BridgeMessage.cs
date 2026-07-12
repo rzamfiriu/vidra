@@ -5,18 +5,18 @@ namespace Vidra.Bridge;
 
 /// <summary>
 /// JSON envelope sent from JS to C#.
-/// Example: { "id": "abc-123", "module": "filesystem", "method": "readText", "payload": { "path": "/tmp/f.txt" } }
+/// Example: { "id": "abc-123", "contract": "filesystem", "member": "readText", "payload": { "path": "/tmp/f.txt" } }
 /// </summary>
 public sealed class BridgeRequest
 {
     [JsonPropertyName("id")]
     public required string Id { get; init; }
 
-    [JsonPropertyName("module")]
-    public required string Module { get; init; }
+    [JsonPropertyName("contract")]
+    public required string Contract { get; init; }
 
-    [JsonPropertyName("method")]
-    public required string Method { get; init; }
+    [JsonPropertyName("member")]
+    public required string Member { get; init; }
 
     [JsonPropertyName("payload")]
     public JsonElement? Payload { get; init; }
@@ -51,15 +51,18 @@ public sealed class BridgeError
 
 /// <summary>
 /// JSON envelope for events pushed from C# to JS.
-/// Example: { "event": "app.resume", "data": { } }
+/// Example: { "contract": "connectivity", "member": "changed", "payload": { } }
 /// </summary>
 public sealed class BridgeEvent
 {
-    [JsonPropertyName("event")]
-    public required string Event { get; init; }
+    [JsonPropertyName("contract")]
+    public required string Contract { get; init; }
 
-    [JsonPropertyName("data")]
-    public object? Data { get; init; }
+    [JsonPropertyName("member")]
+    public required string Member { get; init; }
+
+    [JsonPropertyName("payload")]
+    public JsonElement? Payload { get; init; }
 }
 
 /// <summary>
@@ -70,11 +73,14 @@ public sealed class ReverseRequest
     [JsonPropertyName("id")]
     public required string Id { get; init; }
 
-    [JsonPropertyName("handler")]
-    public required string Handler { get; init; }
+    [JsonPropertyName("contract")]
+    public required string Contract { get; init; }
+
+    [JsonPropertyName("member")]
+    public required string Member { get; init; }
 
     [JsonPropertyName("payload")]
-    public object? Payload { get; init; }
+    public JsonElement? Payload { get; init; }
 }
 
 /// <summary>
@@ -93,4 +99,34 @@ public sealed class ReverseResponse
 
     [JsonPropertyName("error")]
     public BridgeError? Error { get; init; }
+}
+
+public sealed class BridgeHandshake
+{
+    [JsonPropertyName("protocolVersion")]
+    public required int ProtocolVersion { get; init; }
+
+    [JsonPropertyName("coreFingerprint")]
+    public required string CoreFingerprint { get; init; }
+
+    [JsonPropertyName("appFingerprint")]
+    public required string AppFingerprint { get; init; }
+}
+
+public sealed class BridgeCapabilities
+{
+    [JsonPropertyName("protocolVersion")]
+    public required int ProtocolVersion { get; init; }
+
+    [JsonPropertyName("nativeContracts")]
+    public Dictionary<string, NativeContractCapabilities> NativeContracts { get; init; } = new();
+}
+
+public sealed class NativeContractCapabilities
+{
+    [JsonPropertyName("methods")]
+    public IReadOnlyList<string> Methods { get; init; } = Array.Empty<string>();
+
+    [JsonPropertyName("events")]
+    public IReadOnlyList<string> Events { get; init; } = Array.Empty<string>();
 }

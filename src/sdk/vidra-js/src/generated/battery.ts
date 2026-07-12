@@ -12,6 +12,10 @@ export class BatteryProxy {
   constructor(private client: VidraClient) {}
 
   getStatus(): Promise<BatteryStatus> {
-    return this.client.invoke("battery", "getStatus");
+    return this.client.unsafe.invoke("battery", "getStatus");
+  }
+
+  onChanged(handler: (payload: BatteryStatus) => void): () => void {
+    return this.client.unsafe.on("battery", "changed", handler);
   }
 }

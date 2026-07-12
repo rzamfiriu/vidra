@@ -1,4 +1,5 @@
 using System.Reflection;
+using Vidra.CodeGen.Model;
 
 namespace Vidra.CodeGen;
 
@@ -9,7 +10,6 @@ namespace Vidra.CodeGen;
 public sealed class AssemblyScanner
 {
     private readonly MetadataLoadContext _mlc;
-    private readonly HashSet<string> _visitedTypes = new();
 
     public AssemblyScanner(string[] assemblyPaths)
     {
@@ -45,19 +45,45 @@ public sealed class AssemblyScanner
             {
                 var moduleAttr = type.CustomAttributes
                     .FirstOrDefault(a => a.AttributeType.Name == "BridgeModuleAttribute");
+                var eventAttr = type.CustomAttributes
+                    .FirstOrDefault(a => a.AttributeType.Name == "BridgeEventContractAttribute");
+                var jsAttr = type.CustomAttributes
+                    .FirstOrDefault(a => a.AttributeType.Name == "JsContractAttribute");
 
-                if (moduleAttr is null) continue;
-
-                var moduleName = (string)moduleAttr.ConstructorArguments[0].Value!;
-                var moduleManifest = ScanModule(type);
-                manifest.Modules[moduleName] = moduleManifest;
+                if (moduleAttr is not null)
+                {
+                    var contractName = AttributeName(moduleAttr);
+                    var contract = GetOrAddContract(manifest, contractName);
+                    if (contract.ClassName is not null)
+                        throw new InvalidOperationException($"Duplicate native contract '{contractName}'.");
+                    contract.ClassName = type.Name;
+                    foreach (var (name, method) in ScanNativeMethods(type))
+                        contract.NativeMethods.Add(name, method);
+                }
+                else if (eventAttr is not null)
+                {
+                    var contractName = AttributeName(eventAttr);
+                    var contract = GetOrAddContract(manifest, contractName);
+                    foreach (var (name, bridgeEvent) in ScanEvents(type))
+                        contract.Events.Add(name, bridgeEvent);
+                }
+                else if (jsAttr is not null)
+                {
+                    var contractName = AttributeName(jsAttr);
+                    var contract = GetOrAddContract(manifest, contractName);
+                    foreach (var (name, method) in ScanJsMethods(type))
+                        contract.JsMethods.Add(name, method);
+                }
             }
         }
 
+        var entries = ToContractEntries(manifest).ToArray();
+        manifest.CanonicalManifest = ContractFingerprint.Canonicalize(entries);
+        manifest.Fingerprint = ContractFingerprint.Compute(entries);
         return manifest;
     }
 
-    private ModuleManifest ScanModule(Type type)
+    private Dictionary<string, MethodManifest> ScanNativeMethods(Type type)
     {
         var methods = new Dictionary<string, MethodManifest>();
 
@@ -89,10 +115,146 @@ public sealed class AssemblyScanner
             };
         }
 
-        return new ModuleManifest
+        return methods;
+    }
+
+    private Dictionary<string, EventManifest> ScanEvents(Type type)
+    {
+        if (!type.IsInterface)
+            throw new InvalidOperationException($"Event contract '{type.FullName}' must be an interface.");
+
+        var events = new Dictionary<string, EventManifest>(StringComparer.Ordinal);
+        foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
         {
-            ClassName = type.Name,
-            Methods = methods,
+            var attr = method.CustomAttributes
+                .FirstOrDefault(a => a.AttributeType.Name == "BridgeEventAttribute");
+            if (attr is null)
+                continue;
+            if (method.ReturnType.FullName != "System.Void")
+                throw new InvalidOperationException($"Event member '{type.FullName}.{method.Name}' must return void.");
+
+            var payloadParameters = method.GetParameters()
+                .Where(parameter => parameter.ParameterType.FullName != "System.Threading.CancellationToken")
+                .ToArray();
+            if (payloadParameters.Length > 1)
+                throw new InvalidOperationException($"Event member '{type.FullName}.{method.Name}' must have zero or one payload.");
+
+            events.Add(AttributeName(attr), new EventManifest
+            {
+                Payload = payloadParameters.Length == 1 ? ResolveType(payloadParameters[0].ParameterType) : null,
+            });
+        }
+        return events;
+    }
+
+    private Dictionary<string, MethodManifest> ScanJsMethods(Type type)
+    {
+        if (!type.IsInterface)
+            throw new InvalidOperationException($"JS contract '{type.FullName}' must be an interface.");
+
+        var methods = new Dictionary<string, MethodManifest>(StringComparer.Ordinal);
+        foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+        {
+            var attr = method.CustomAttributes
+                .FirstOrDefault(a => a.AttributeType.Name == "JsMethodAttribute");
+            if (attr is null)
+                continue;
+
+            var payloadParameters = method.GetParameters()
+                .Where(parameter => parameter.ParameterType.FullName != "System.Threading.CancellationToken")
+                .ToArray();
+            if (payloadParameters.Length > 1)
+                throw new InvalidOperationException($"JS member '{type.FullName}.{method.Name}' must have zero or one payload.");
+
+            if (method.ReturnType.Name != "Task" && method.ReturnType.Name != "Task`1")
+                throw new InvalidOperationException($"JS member '{type.FullName}.{method.Name}' must return Task or Task<T>.");
+
+            var returnType = UnwrapTaskType(method.ReturnType);
+            methods.Add(AttributeName(attr), new MethodManifest
+            {
+                Params = payloadParameters.Length == 1 ? ResolveType(payloadParameters[0].ParameterType) : null,
+                Returns = returnType is not null ? ResolveType(returnType) : null,
+            });
+        }
+        return methods;
+    }
+
+    private static string AttributeName(CustomAttributeData attribute)
+    {
+        var name = attribute.ConstructorArguments.Count == 1
+            ? attribute.ConstructorArguments[0].Value as string
+            : null;
+        return !string.IsNullOrWhiteSpace(name)
+            ? name
+            : throw new InvalidOperationException(
+                $"{attribute.AttributeType.Name} requires an explicit non-empty name.");
+    }
+
+    private static ContractManifest GetOrAddContract(Manifest manifest, string contractName)
+    {
+        if (!manifest.Contracts.TryGetValue(contractName, out var contract))
+        {
+            contract = new ContractManifest();
+            manifest.Contracts.Add(contractName, contract);
+        }
+        return contract;
+    }
+
+    private static IEnumerable<ContractEntry> ToContractEntries(Manifest manifest)
+    {
+        foreach (var (contractName, contract) in manifest.Contracts)
+        {
+            foreach (var (memberName, method) in contract.NativeMethods)
+            {
+                yield return new ContractEntry
+                {
+                    Contract = contractName,
+                    Member = memberName,
+                    Kind = ContractMemberKind.NativeMethod,
+                    PayloadSchema = TypeSchema(method.Params),
+                    ResultSchema = TypeSchema(method.Returns),
+                };
+            }
+            foreach (var (memberName, bridgeEvent) in contract.Events)
+            {
+                yield return new ContractEntry
+                {
+                    Contract = contractName,
+                    Member = memberName,
+                    Kind = ContractMemberKind.Event,
+                    PayloadSchema = TypeSchema(bridgeEvent.Payload),
+                };
+            }
+            foreach (var (memberName, method) in contract.JsMethods)
+            {
+                yield return new ContractEntry
+                {
+                    Contract = contractName,
+                    Member = memberName,
+                    Kind = ContractMemberKind.JsMethod,
+                    PayloadSchema = TypeSchema(method.Params),
+                    ResultSchema = TypeSchema(method.Returns),
+                };
+            }
+        }
+    }
+
+    private static string? TypeSchema(TypeRef? type)
+    {
+        if (type is null)
+            return null;
+
+        return type.Kind switch
+        {
+            "primitive" => $"primitive({type.TsType})",
+            "nullable" => $"nullable({TypeSchema(type.Element)})",
+            "array" => $"array({TypeSchema(type.Element)})",
+            "dictionary" => $"dictionary({TypeSchema(type.Element)})",
+            "enum" => $"enum({string.Join(",", type.Values ?? [])})",
+            "object" => $"object({type.Name}){{{string.Join(",", (type.Fields ?? new())
+                .OrderBy(field => field.Key, StringComparer.Ordinal)
+                .Select(field => $"{field.Key}:{TypeSchema(field.Value)}"))}}}",
+            _ => throw new InvalidOperationException($"Unsupported manifest type kind '{type.Kind}'."),
         };
     }
 
@@ -107,15 +269,17 @@ public sealed class AssemblyScanner
         return type;
     }
 
-    private TypeRef ResolveType(Type type)
+    private TypeRef ResolveType(Type type, HashSet<string>? visiting = null)
     {
+        visiting ??= new HashSet<string>(StringComparer.Ordinal);
+
         // Nullable<T>
         if (type.IsGenericType && type.GetGenericTypeDefinition().FullName == "System.Nullable`1")
         {
             return new TypeRef
             {
                 Kind = "nullable",
-                Element = ResolveType(type.GetGenericArguments()[0]),
+                Element = ResolveType(type.GetGenericArguments()[0], visiting),
             };
         }
 
@@ -132,7 +296,7 @@ public sealed class AssemblyScanner
             return new TypeRef
             {
                 Kind = "array",
-                Element = ResolveType(type.GetElementType()!),
+                Element = ResolveType(type.GetElementType()!, visiting),
             };
         }
 
@@ -148,7 +312,7 @@ public sealed class AssemblyScanner
                 return new TypeRef
                 {
                     Kind = "array",
-                    Element = ResolveType(type.GetGenericArguments()[0]),
+                    Element = ResolveType(type.GetGenericArguments()[0], visiting),
                 };
             }
 
@@ -157,10 +321,14 @@ public sealed class AssemblyScanner
                 genName.StartsWith("System.Collections.Generic.IDictionary`2") ||
                 genName.StartsWith("System.Collections.Generic.IReadOnlyDictionary`2"))
             {
+                if (type.GetGenericArguments()[0].FullName != "System.String")
+                    throw new InvalidOperationException(
+                        $"Contract dictionary '{type.FullName}' must use string keys.");
+
                 return new TypeRef
                 {
-                    Kind = "record",
-                    Name = $"Record<string, {MapPrimitive(type.GetGenericArguments()[1]) ?? "unknown"}>",
+                    Kind = "dictionary",
+                    Element = ResolveType(type.GetGenericArguments()[1], visiting),
                 };
             }
         }
@@ -175,10 +343,38 @@ public sealed class AssemblyScanner
         }
 
         // Record / Class with properties → object type
-        var fields = new Dictionary<string, TypeRef>();
-        foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        var typeIdentity = type.FullName ?? type.Name;
+        if (!visiting.Add(typeIdentity))
+            throw new InvalidOperationException($"Cyclic contract type '{typeIdentity}' is not supported.");
+
+        var properties = type.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+        if (properties.Length == 0)
+            throw new InvalidOperationException(
+                $"Contract type '{typeIdentity}' is unsupported because it has no public properties.");
+
+        var hasMatchingConstructor = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance)
+            .Any(constructor =>
+            {
+                var parameters = constructor.GetParameters();
+                return parameters.Length == properties.Length
+                       && parameters.All(parameter =>
+                           properties.Any(property =>
+                               string.Equals(property.Name, parameter.Name, StringComparison.OrdinalIgnoreCase)
+                               && property.PropertyType == parameter.ParameterType));
+            });
+        var hasSettableParameterlessShape =
+            type.GetConstructor(Type.EmptyTypes) is not null
+            && properties.All(property => property.SetMethod is not null);
+        if (!hasMatchingConstructor && !hasSettableParameterlessShape)
         {
-            var fieldRef = ResolveType(prop.PropertyType);
+            throw new InvalidOperationException(
+                $"Contract type '{typeIdentity}' needs a matching public constructor or settable properties.");
+        }
+
+        var fields = new Dictionary<string, TypeRef>();
+        foreach (var prop in properties)
+        {
+            var fieldRef = ResolveType(prop.PropertyType, visiting);
 
             // Reference-type nullability (`string?`, `Foo?`) is carried by NRT
             // annotations, not Nullable<T>, so wrap it here to match the
@@ -191,6 +387,7 @@ public sealed class AssemblyScanner
 
             fields[ToCamelCase(prop.Name)] = fieldRef;
         }
+        visiting.Remove(typeIdentity);
 
         return new TypeRef
         {

@@ -1,0 +1,7 @@
+{
+  "contract": "runtime",
+  "member": "hotReloaded",
+  "payload": {
+    "updatedTypes": ["Example.Counter"]
+  }
+}

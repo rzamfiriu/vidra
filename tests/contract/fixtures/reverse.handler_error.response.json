@@ -2,7 +2,7 @@
   "id": "rev_3",
   "success": false,
   "error": {
-    "code": "HANDLER_ERROR",
+    "code": "JS_HANDLER_ERROR",
     "message": "boom"
   }
 }

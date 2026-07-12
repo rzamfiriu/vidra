@@ -1,3 +1,5 @@
+using Vidra.Bridge;
+
 namespace Vidra.Modules.Windowing;
 
 public enum WindowState
@@ -31,10 +33,14 @@ public record SetSizeArgs(double Width, double Height);
 
 public record SetFullscreenArgs(bool Enabled);
 
-public static class AppWindowEvents
+[BridgeEventContract("appWindow")]
+public interface IAppWindowEvents
 {
-    public const string Resized = "appWindow.resized";
-    public const string StateChanged = "appWindow.stateChanged";
+    [BridgeEvent("resized")]
+    void Resized(WindowInfo payload);
+
+    [BridgeEvent("stateChanged")]
+    void StateChanged(WindowInfo payload);
 }
 
 /// <summary>

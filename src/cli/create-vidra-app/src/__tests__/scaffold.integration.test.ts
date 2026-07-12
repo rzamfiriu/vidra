@@ -50,10 +50,14 @@ describe("scaffold integration", () => {
       path.join("ui", "vite.config.ts"),
       path.join("ui", "src", "main.tsx"),
       path.join("ui", "src", "App.tsx"),
+      path.join("ui", "src", "generated", "counter.ts"),
+      path.join("ui", "src", "generated", "index.ts"),
+      path.join("ui", "src", "generated", "manifest.json"),
       path.join("ui", "index.html"),
       path.join("src", `${projectName}.Host`, `${projectName}.Host.csproj`),
       path.join("src", `${projectName}.Host`, "MauiProgram.cs"),
       path.join("src", `${projectName}.Host`, "App.xaml.cs"),
+      path.join("src", `${projectName}.Host`, "CounterJsContract.cs"),
     ];
     for (const rel of expected) {
       const abs = path.join(root, rel);
@@ -119,6 +123,7 @@ describe("scaffold integration", () => {
     const content = await fs.readFile(csprojPath, "utf8");
     expect(content).toContain(`<RootNamespace>${projectName}`);
     expect(content).toContain("<ApplicationDisplayVersion>");
+    expect(content).toContain("<VidraTsOutputDir>");
     expect(content).not.toMatch(/\{\{.+?\}\}/);
   });
 

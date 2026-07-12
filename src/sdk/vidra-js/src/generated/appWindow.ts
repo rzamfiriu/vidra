@@ -44,42 +44,50 @@ export class AppWindowProxy {
   constructor(private client: VidraClient) {}
 
   getSupport(): Promise<WindowSupport> {
-    return this.client.invoke("appWindow", "getSupport");
+    return this.client.unsafe.invoke("appWindow", "getSupport");
   }
 
   getCurrent(): Promise<WindowInfo> {
-    return this.client.invoke("appWindow", "getCurrent");
+    return this.client.unsafe.invoke("appWindow", "getCurrent");
   }
 
   configure(args: ConfigureWindowArgs): Promise<WindowInfo> {
-    return this.client.invoke("appWindow", "configure", args);
+    return this.client.unsafe.invoke("appWindow", "configure", args);
   }
 
   setTitle(args: SetTitleArgs): Promise<WindowInfo> {
-    return this.client.invoke("appWindow", "setTitle", args);
+    return this.client.unsafe.invoke("appWindow", "setTitle", args);
   }
 
   setSize(args: SetSizeArgs): Promise<WindowInfo> {
-    return this.client.invoke("appWindow", "setSize", args);
+    return this.client.unsafe.invoke("appWindow", "setSize", args);
   }
 
   center(): Promise<WindowInfo> {
-    return this.client.invoke("appWindow", "center");
+    return this.client.unsafe.invoke("appWindow", "center");
   }
 
   maximize(): Promise<WindowInfo> {
-    return this.client.invoke("appWindow", "maximize");
+    return this.client.unsafe.invoke("appWindow", "maximize");
   }
 
   minimize(): Promise<WindowInfo> {
-    return this.client.invoke("appWindow", "minimize");
+    return this.client.unsafe.invoke("appWindow", "minimize");
   }
 
   restore(): Promise<WindowInfo> {
-    return this.client.invoke("appWindow", "restore");
+    return this.client.unsafe.invoke("appWindow", "restore");
   }
 
   setFullscreen(args: SetFullscreenArgs): Promise<WindowInfo> {
-    return this.client.invoke("appWindow", "setFullscreen", args);
+    return this.client.unsafe.invoke("appWindow", "setFullscreen", args);
+  }
+
+  onResized(handler: (payload: WindowInfo) => void): () => void {
+    return this.client.unsafe.on("appWindow", "resized", handler);
+  }
+
+  onStateChanged(handler: (payload: WindowInfo) => void): () => void {
+    return this.client.unsafe.on("appWindow", "stateChanged", handler);
   }
 }

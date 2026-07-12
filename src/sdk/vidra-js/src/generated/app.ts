@@ -18,10 +18,10 @@ export class AppProxy {
   constructor(private client: VidraClient) {}
 
   getInfo(): Promise<AppInfoResult> {
-    return this.client.invoke("app", "getInfo");
+    return this.client.unsafe.invoke("app", "getInfo");
   }
 
   getTheme(): Promise<ThemeResult> {
-    return this.client.invoke("app", "getTheme");
+    return this.client.unsafe.invoke("app", "getTheme");
   }
 }

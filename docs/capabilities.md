@@ -12,7 +12,7 @@ import { filesystem } from "@vidra-dev/sdk";
 const { content } = await filesystem.readText({ path: "/tmp/notes.txt" });
 ```
 
-## Built-in Modules
+## Built-in native contracts
 
 ### `filesystem`
 
@@ -172,7 +172,7 @@ Returns file **metadata** only; read contents through `filesystem` using the ret
 
 - `access`: `"unknown" | "none" | "local" | "constrainedInternet" | "internet"`
 - `profiles`: `("unknown" | "bluetooth" | "cellular" | "ethernet" | "wifi")[]`
-- Event wrapper: `connectivity.onChanged(handler)` (fires on `connectivity.changed`).
+- Generated event method: `connectivity.onChanged(handler)`.
 
 ### `battery`
 
@@ -183,7 +183,7 @@ Returns file **metadata** only; read contents through `filesystem` using the ret
 - `state`: `"unknown" | "charging" | "discharging" | "full" | "notCharging" | "notPresent"`
 - `powerSource`: `"unknown" | "battery" | "ac" | "wireless"`
 - `energySaver`: `"unknown" | "on" | "off"`
-- Event wrapper: `battery.onChanged(handler)` (fires on `battery.changed`).
+- Generated event method: `battery.onChanged(handler)`.
 
 ### `essentials`
 
@@ -198,5 +198,15 @@ frontend can feature-detect (mirrors `appWindow.getSupport()`).
 
 ```typescript
 const caps = await vidra.capabilities();
-// { filesystem: ['readText', 'writeText', ...], clipboard: [...], ... }
+// {
+//   protocolVersion: 2,
+//   nativeContracts: {
+//     filesystem: { methods: ['readText', 'writeText', ...], events: [] },
+//     connectivity: { methods: ['getStatus'], events: ['changed'] }
+//   }
+// }
 ```
+
+`runtime.onHotReloaded(handler)` is an event-only generated contract used by
+`vidra dev`. App-owned JS contracts are generated into the app rather than listed
+as native capabilities because handler registration is dynamic.

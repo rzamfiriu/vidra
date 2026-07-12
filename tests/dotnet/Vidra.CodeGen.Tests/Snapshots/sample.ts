@@ -18,6 +18,10 @@ export class SampleProxy {
   constructor(private client: VidraClient) {}
 
   echo(args: EchoArgs): Promise<EchoResult> {
-    return this.client.invoke("sample", "echo", args);
+    return this.client.unsafe.invoke("sample", "echo", args);
+  }
+
+  onChanged(handler: (payload: EchoResult) => void): () => void {
+    return this.client.unsafe.on("sample", "changed", handler);
   }
 }

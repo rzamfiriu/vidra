@@ -10,6 +10,10 @@ export class ConnectivityProxy {
   constructor(private client: VidraClient) {}
 
   getStatus(): Promise<ConnectivityStatus> {
-    return this.client.invoke("connectivity", "getStatus");
+    return this.client.unsafe.invoke("connectivity", "getStatus");
+  }
+
+  onChanged(handler: (payload: ConnectivityStatus) => void): () => void {
+    return this.client.unsafe.on("connectivity", "changed", handler);
   }
 }

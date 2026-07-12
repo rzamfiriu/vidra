@@ -2,7 +2,7 @@
   "id": "req_3",
   "success": false,
   "error": {
-    "code": "MODULE_ERROR",
+    "code": "NATIVE_MEMBER_ERROR",
     "message": "boom"
   }
 }

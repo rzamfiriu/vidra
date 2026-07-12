@@ -1,6 +1,7 @@
 import { type MouseEvent, useEffect, useRef, useState } from "react";
-import { app, appWindow, browser, clipboard, notifications, vidra } from "@vidra-dev/sdk";
+import { app, appWindow, browser, clipboard, notifications, runtime } from "@vidra-dev/sdk";
 import type { WindowInfo, WindowSupport } from "@vidra-dev/sdk";
+import { counterHandlers } from "./generated/index.js";
 
 const describeWindow = (windowInfo: WindowInfo): string => {
   const title = windowInfo.title || "(untitled)";
@@ -24,15 +25,14 @@ const App = () => {
   const reloadFlashTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
-    const unsubscribeCounter = vidra.handle<void, number>("counter.increment", () => {
+    const unsubscribeCounter = counterHandlers.increment(() => {
       countRef.current += 1;
       setCount(countRef.current);
       return countRef.current;
     });
 
     // Emitted by the native host when `vidra dev` hot reloads edited C#.
-    const unsubscribeHotReloaded = vidra.on<{ updatedTypes?: string[] }>(
-      "vidra.hotReloaded",
+    const unsubscribeHotReloaded = runtime.onHotReloaded(
       (data) => {
         const typeName = data?.updatedTypes?.[0]?.split(".").pop();
         setCsReloaded(typeName ? `C# reloaded · ${typeName}` : "C# reloaded");

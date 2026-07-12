@@ -1,7 +1,7 @@
 {
   "id": "req_1",
-  "module": "echo",
-  "method": "ping",
+  "contract": "echo",
+  "member": "ping",
   "payload": {
     "text": "hello"
   }

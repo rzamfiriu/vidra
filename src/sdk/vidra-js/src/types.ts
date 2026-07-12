@@ -1,7 +1,7 @@
 export interface BridgeRequest {
   id: string;
-  module: string;
-  method: string;
+  contract: string;
+  member: string;
   payload?: unknown;
 }
 
@@ -18,18 +18,34 @@ export interface BridgeError {
 }
 
 export interface BridgeEvent<T = unknown> {
-  event: string;
-  data?: T;
+  contract: string;
+  member: string;
+  payload?: T;
 }
 
 export type EventHandler<T = unknown> = (data: T) => void;
 
-export type Capabilities = Record<string, string[]>;
+export interface NativeContractCapabilities {
+  methods: string[];
+  events: string[];
+}
+
+export interface Capabilities {
+  protocolVersion: number;
+  nativeContracts: Record<string, NativeContractCapabilities>;
+}
+
+export interface BridgeHandshake {
+  protocolVersion: number;
+  coreFingerprint: string;
+  appFingerprint: string;
+}
 
 /** Sent from C# to JS when calling a registered handler via reverse RPC. */
 export interface ReverseRequest {
   id: string;
-  handler: string;
+  contract: string;
+  member: string;
   payload?: unknown;
 }
 

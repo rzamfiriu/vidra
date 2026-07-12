@@ -1,8 +1,8 @@
 {
-  "modules": {
+  "contracts": {
     "filesystem": {
       "className": "FileSystemModule",
-      "methods": {
+      "nativeMethods": {
         "readText": {
           "params": {
             "kind": "object",
@@ -130,11 +130,13 @@
             }
           }
         }
-      }
+      },
+      "events": {},
+      "jsMethods": {}
     },
     "clipboard": {
       "className": "ClipboardModule",
-      "methods": {
+      "nativeMethods": {
         "getText": {
           "returns": {
             "kind": "object",
@@ -181,11 +183,13 @@
             }
           }
         }
-      }
+      },
+      "events": {},
+      "jsMethods": {}
     },
     "dialogs": {
       "className": "DialogsModule",
-      "methods": {
+      "nativeMethods": {
         "alert": {
           "params": {
             "kind": "object",
@@ -305,11 +309,13 @@
             }
           }
         }
-      }
+      },
+      "events": {},
+      "jsMethods": {}
     },
     "notifications": {
       "className": "NotificationsModule",
-      "methods": {
+      "nativeMethods": {
         "show": {
           "params": {
             "kind": "object",
@@ -351,11 +357,13 @@
             }
           }
         }
-      }
+      },
+      "events": {},
+      "jsMethods": {}
     },
     "app": {
       "className": "AppLifecycleModule",
-      "methods": {
+      "nativeMethods": {
         "getInfo": {
           "returns": {
             "kind": "object",
@@ -400,11 +408,13 @@
             }
           }
         }
-      }
+      },
+      "events": {},
+      "jsMethods": {}
     },
     "appWindow": {
       "className": "AppWindowModule",
-      "methods": {
+      "nativeMethods": {
         "getSupport": {
           "returns": {
             "kind": "object",
@@ -784,11 +794,74 @@
             }
           }
         }
-      }
+      },
+      "events": {
+        "resized": {
+          "payload": {
+            "kind": "object",
+            "name": "WindowInfo",
+            "fields": {
+              "title": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "width": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "height": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "state": {
+                "kind": "enum",
+                "name": "WindowState",
+                "values": [
+                  "Restored",
+                  "Maximized",
+                  "Minimized",
+                  "Fullscreen"
+                ]
+              }
+            }
+          }
+        },
+        "stateChanged": {
+          "payload": {
+            "kind": "object",
+            "name": "WindowInfo",
+            "fields": {
+              "title": {
+                "kind": "primitive",
+                "tsType": "string"
+              },
+              "width": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "height": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "state": {
+                "kind": "enum",
+                "name": "WindowState",
+                "values": [
+                  "Restored",
+                  "Maximized",
+                  "Minimized",
+                  "Fullscreen"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "jsMethods": {}
     },
     "battery": {
       "className": "BatteryModule",
-      "methods": {
+      "nativeMethods": {
         "getStatus": {
           "returns": {
             "kind": "object",
@@ -832,11 +905,57 @@
             }
           }
         }
-      }
+      },
+      "events": {
+        "changed": {
+          "payload": {
+            "kind": "object",
+            "name": "BatteryStatus",
+            "fields": {
+              "chargeLevel": {
+                "kind": "primitive",
+                "tsType": "number"
+              },
+              "state": {
+                "kind": "enum",
+                "name": "BatteryState",
+                "values": [
+                  "Unknown",
+                  "Charging",
+                  "Discharging",
+                  "Full",
+                  "NotCharging",
+                  "NotPresent"
+                ]
+              },
+              "powerSource": {
+                "kind": "enum",
+                "name": "BatteryPowerSource",
+                "values": [
+                  "Unknown",
+                  "Battery",
+                  "Ac",
+                  "Wireless"
+                ]
+              },
+              "energySaver": {
+                "kind": "enum",
+                "name": "EnergySaverStatus",
+                "values": [
+                  "Unknown",
+                  "On",
+                  "Off"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "jsMethods": {}
     },
     "browser": {
       "className": "BrowserModule",
-      "methods": {
+      "nativeMethods": {
         "open": {
           "params": {
             "kind": "object",
@@ -870,11 +989,13 @@
             }
           }
         }
-      }
+      },
+      "events": {},
+      "jsMethods": {}
     },
     "connectivity": {
       "className": "ConnectivityModule",
-      "methods": {
+      "nativeMethods": {
         "getStatus": {
           "returns": {
             "kind": "object",
@@ -908,11 +1029,47 @@
             }
           }
         }
-      }
+      },
+      "events": {
+        "changed": {
+          "payload": {
+            "kind": "object",
+            "name": "ConnectivityStatus",
+            "fields": {
+              "access": {
+                "kind": "enum",
+                "name": "NetworkAccess",
+                "values": [
+                  "Unknown",
+                  "None",
+                  "Local",
+                  "ConstrainedInternet",
+                  "Internet"
+                ]
+              },
+              "profiles": {
+                "kind": "array",
+                "element": {
+                  "kind": "enum",
+                  "name": "ConnectionProfile",
+                  "values": [
+                    "Unknown",
+                    "Bluetooth",
+                    "Cellular",
+                    "Ethernet",
+                    "Wifi"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "jsMethods": {}
     },
     "device": {
       "className": "DeviceModule",
-      "methods": {
+      "nativeMethods": {
         "getInfo": {
           "returns": {
             "kind": "object",
@@ -977,11 +1134,13 @@
             }
           }
         }
-      }
+      },
+      "events": {},
+      "jsMethods": {}
     },
     "email": {
       "className": "EmailModule",
-      "methods": {
+      "nativeMethods": {
         "compose": {
           "params": {
             "kind": "object",
@@ -1044,11 +1203,13 @@
             }
           }
         }
-      }
+      },
+      "events": {},
+      "jsMethods": {}
     },
     "essentials": {
       "className": "EssentialsSupportModule",
-      "methods": {
+      "nativeMethods": {
         "getSupport": {
           "returns": {
             "kind": "object",
@@ -1105,11 +1266,13 @@
             }
           }
         }
-      }
+      },
+      "events": {},
+      "jsMethods": {}
     },
     "filePicker": {
       "className": "FilePickerModule",
-      "methods": {
+      "nativeMethods": {
         "pickOne": {
           "params": {
             "kind": "object",
@@ -1200,11 +1363,13 @@
             }
           }
         }
-      }
+      },
+      "events": {},
+      "jsMethods": {}
     },
     "launcher": {
       "className": "LauncherModule",
-      "methods": {
+      "nativeMethods": {
         "open": {
           "params": {
             "kind": "object",
@@ -1249,11 +1414,13 @@
             }
           }
         }
-      }
+      },
+      "events": {},
+      "jsMethods": {}
     },
     "preferences": {
       "className": "PreferencesModule",
-      "methods": {
+      "nativeMethods": {
         "get": {
           "params": {
             "kind": "object",
@@ -1361,11 +1528,13 @@
             }
           }
         }
-      }
+      },
+      "events": {},
+      "jsMethods": {}
     },
     "secureStorage": {
       "className": "SecureStorageModule",
-      "methods": {
+      "nativeMethods": {
         "get": {
           "params": {
             "kind": "object",
@@ -1451,11 +1620,13 @@
             }
           }
         }
-      }
+      },
+      "events": {},
+      "jsMethods": {}
     },
     "share": {
       "className": "ShareModule",
-      "methods": {
+      "nativeMethods": {
         "shareText": {
           "params": {
             "kind": "object",
@@ -1499,11 +1670,13 @@
             }
           }
         }
-      }
+      },
+      "events": {},
+      "jsMethods": {}
     },
     "textToSpeech": {
       "className": "TextToSpeechModule",
-      "methods": {
+      "nativeMethods": {
         "speak": {
           "params": {
             "kind": "object",
@@ -1540,7 +1713,31 @@
             }
           }
         }
-      }
+      },
+      "events": {},
+      "jsMethods": {}
+    },
+    "runtime": {
+      "nativeMethods": {},
+      "events": {
+        "hotReloaded": {
+          "payload": {
+            "kind": "object",
+            "name": "HotReloadedPayload",
+            "fields": {
+              "updatedTypes": {
+                "kind": "array",
+                "element": {
+                  "kind": "primitive",
+                  "tsType": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "jsMethods": {}
     }
-  }
+  },
+  "fingerprint": "a4d6e4856749f06fd3c84be9bb5a468c5219e71797777a977a2d0772dc6214db"
 }

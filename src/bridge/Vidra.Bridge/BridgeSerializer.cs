@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text.Json.Serialization.Metadata;
 
 namespace Vidra.Bridge;
 
@@ -10,6 +11,7 @@ public static class BridgeSerializer
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         WriteIndented = false,
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver(),
         Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
 
@@ -18,4 +20,5 @@ public static class BridgeSerializer
 
     public static T? Deserialize<T>(string json)
         => JsonSerializer.Deserialize<T>(json, Default);
+
 }

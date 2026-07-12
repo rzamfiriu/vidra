@@ -35,6 +35,7 @@ We follow a pyramid:
 | Contract    | `tests/contract/fixtures/*.json` via `ContractFixtureTests` | `ubuntu-latest`       |
 | Contract    | Same fixtures via SDK `contract.test.ts`                    | `ubuntu-latest`       |
 | Integration | CLI `scaffold.integration.test.ts` (tmpdir scaffold)        | `ubuntu-latest`       |
+| Integration | `Vidra.CodeGen.AppFixture` build + `VidraCodeGenCheck`      | `ubuntu-latest`       |
 | Smoke       | `tests/dotnet/Vidra.Bridge.Smoke` + `tests/smoke/echo-ping.mjs` | `windows-latest`, `macos-latest` |
 | Smoke       | CLI scaffold + `dotnet build` of scaffolded host            | `windows-latest`, `macos-latest` |
 
@@ -44,6 +45,8 @@ We follow a pyramid:
 # C# unit + contract + codegen
 dotnet test tests/dotnet/Vidra.Bridge.Tests/Vidra.Bridge.Tests.csproj
 dotnet test tests/dotnet/Vidra.CodeGen.Tests/Vidra.CodeGen.Tests.csproj
+dotnet build tests/dotnet/Vidra.CodeGen.AppFixture/Vidra.CodeGen.AppFixture.csproj
+dotnet msbuild tests/dotnet/Vidra.CodeGen.AppFixture/Vidra.CodeGen.AppFixture.csproj -t:VidraCodeGenCheck
 dotnet test tests/dotnet/Vidra.Modules.FileSystem.Tests/Vidra.Modules.FileSystem.Tests.csproj
 dotnet test tests/dotnet/Vidra.Modules.Windowing.Tests/Vidra.Modules.Windowing.Tests.csproj
 dotnet test tests/dotnet/Vidra.Modules.Essentials.Tests/Vidra.Modules.Essentials.Tests.csproj
@@ -100,7 +103,12 @@ Run them on a development machine for each platform you ship to
 - [ ] Entered app-id flows into `Info.plist` (macOS) / `Package.appxmanifest` (Windows).
 - [ ] `cd demo && npm run dev` brings up Vite + the native host, and the
       webview loads `http://localhost:5173` (or the configured port).
-- [ ] Closing the native window terminates the dev process cleanly.
+- [ ] Editing a C# method body (e.g. `OnTickAsync` in `MainPage.cs`) hot
+      reloads into the running app and the UI flashes "C# reloaded"; a rude
+      edit (e.g. adding a field) rebuilds and relaunches automatically.
+- [ ] Closing the native window: with C# hot reload active the session stays
+      up and prints "save a C# file to relaunch" (save to relaunch, ctrl-c to
+      stop); with `--no-hot-reload` it terminates the dev process cleanly.
 - [ ] `vidra build` produces a distributable artifact
       (`.app` / `.dmg` on macOS, `.msix`/`.exe` on Windows).
 
@@ -121,7 +129,7 @@ For each platform, run a UI that calls `appWindow` via the SDK and verify:
       and `appWindow.stateChanged` events fire for each transition.
 - [ ] `appWindow.setFullscreen(true)` / `setFullscreen(false)` round-trips,
       with `appWindow.stateChanged` events firing both directions.
-- [ ] Invalid dimensions (zero/negative) surface as a `MODULE_ERROR` in the
+- [ ] Invalid dimensions (zero/negative) surface as a `NATIVE_MEMBER_ERROR` in the
       promise (not a process crash).
 
 ### 3. Notifications module
@@ -161,13 +169,15 @@ For each platform, run a UI that calls `appWindow` via the SDK and verify:
       `"hello"` in the same session.
 - [ ] Clipboard state survives navigating the webview.
 
-### 7. App lifecycle events
+### 7. Typed contract generation
 
-- [ ] `app.suspend` fires when the OS backgrounds the app (Windows:
-      minimizing to tray if enabled; macOS: ⌘H / switching Spaces).
-- [ ] `app.resume` fires on foreground.
-- [ ] `app.beforeQuit` fires before the process exits, and a handler that
-      returns a promise can delay the quit.
+- [ ] Adding an event-contract member regenerates the matching `onX` method and
+      event payload type; emitting the wrong C# payload fails compilation.
+- [ ] Adding a JS-contract member regenerates `Bridge.Js()` and the matching
+      TypeScript handler registry.
+- [ ] Editing a committed generated file makes `VidraCodeGenCheck` fail.
+- [ ] Running with mismatched SDK/native packages shows the protocol mismatch
+      diagnostic instead of starting bridge traffic.
 
 ### 8. MAUI Essentials modules
 

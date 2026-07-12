@@ -14,6 +14,6 @@ export class BrowserProxy {
   constructor(private client: VidraClient) {}
 
   open(args: BrowserOpenArgs): Promise<BrowserOpenResult> {
-    return this.client.invoke("browser", "open", args);
+    return this.client.unsafe.invoke("browser", "open", args);
   }
 }

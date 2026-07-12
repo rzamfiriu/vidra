@@ -97,8 +97,8 @@ public sealed class ContractFixtureTests
         var request = BridgeSerializer.Serialize(new BridgeRequest
         {
             Id = "cap_1",
-            Module = "__bridge",
-            Method = "capabilities",
+            Contract = "__bridge",
+            Member = "capabilities",
         });
 
         var response = AsElement(await dispatcher.DispatchAsync(request));
@@ -107,27 +107,29 @@ public sealed class ContractFixtureTests
         response.GetProperty("id").GetString().Should().Be(expected.GetProperty("id").GetString());
         response.GetProperty("success").GetBoolean().Should().BeTrue();
 
-        var actualEcho = response.GetProperty("data").GetProperty("echo");
-        var expectedEcho = expected.GetProperty("data").GetProperty("echo");
+        var actualEcho = response.GetProperty("data").GetProperty("nativeContracts").GetProperty("echo");
+        var expectedEcho = expected.GetProperty("data").GetProperty("nativeContracts").GetProperty("echo");
 
-        var actualMethods = actualEcho.EnumerateArray().Select(e => e.GetString()).ToHashSet();
-        var expectedMethods = expectedEcho.EnumerateArray().Select(e => e.GetString()).ToHashSet();
+        var actualMethods = actualEcho.GetProperty("methods").EnumerateArray().Select(e => e.GetString()).ToHashSet();
+        var expectedMethods = expectedEcho.GetProperty("methods").EnumerateArray().Select(e => e.GetString()).ToHashSet();
         actualMethods.Should().BeEquivalentTo(expectedMethods);
     }
 
     [Fact]
     public void Event_Fixture_Roundtrips_Through_BridgeEvent()
     {
-        var raw = ReadFixture("event.app_resume.json");
+        var raw = ReadFixture("event.runtime_hot_reloaded.json");
         var ev = BridgeSerializer.Deserialize<BridgeEvent>(raw);
-        ev!.Event.Should().Be("app.resume");
+        ev!.Contract.Should().Be("runtime");
+        ev.Member.Should().Be("hotReloaded");
     }
 
     [Fact]
     public void Reverse_Fixtures_Roundtrip_Through_ReverseRequest_And_Response()
     {
         var req = BridgeSerializer.Deserialize<ReverseRequest>(ReadFixture("reverse.success.request.json"));
-        req!.Handler.Should().Be("confirm");
+        req!.Contract.Should().Be("dialog");
+        req.Member.Should().Be("confirm");
         req.Id.Should().Be("rev_1");
 
         var success = BridgeSerializer.Deserialize<ReverseResponse>(ReadFixture("reverse.success.response.json"));
@@ -136,11 +138,11 @@ public sealed class ContractFixtureTests
 
         var notFound = BridgeSerializer.Deserialize<ReverseResponse>(ReadFixture("reverse.handler_not_found.response.json"));
         notFound!.Success.Should().BeFalse();
-        notFound.Error!.Code.Should().Be("HANDLER_NOT_FOUND");
+        notFound.Error!.Code.Should().Be("JS_HANDLER_NOT_FOUND");
 
         var errored = BridgeSerializer.Deserialize<ReverseResponse>(ReadFixture("reverse.handler_error.response.json"));
         errored!.Success.Should().BeFalse();
-        errored.Error!.Code.Should().Be("HANDLER_ERROR");
+        errored.Error!.Code.Should().Be("JS_HANDLER_ERROR");
     }
 
     [Fact]
@@ -151,20 +153,25 @@ public sealed class ContractFixtureTests
         // string arrays), matching event.connectivity_changed.json.
         var ev = new BridgeEvent
         {
-            Event = "connectivity.changed",
-            Data = new SampleConnectivity(
-                SampleAccess.Internet,
-                new[] { SampleProfile.Wifi, SampleProfile.Ethernet }),
+            Contract = "connectivity",
+            Member = "changed",
+            Payload = JsonSerializer.SerializeToElement(
+                new SampleConnectivity(
+                    SampleAccess.Internet,
+                    new[] { SampleProfile.Wifi, SampleProfile.Ethernet }),
+                BridgeSerializer.Default),
         };
 
         var actual = AsElement(BridgeSerializer.Serialize(ev));
         var expected = AsElement(ReadFixture("event.connectivity_changed.json"));
 
-        actual.GetProperty("event").GetString()
-            .Should().Be(expected.GetProperty("event").GetString());
+        actual.GetProperty("contract").GetString()
+            .Should().Be(expected.GetProperty("contract").GetString());
+        actual.GetProperty("member").GetString()
+            .Should().Be(expected.GetProperty("member").GetString());
 
-        var actualData = actual.GetProperty("data");
-        var expectedData = expected.GetProperty("data");
+        var actualData = actual.GetProperty("payload");
+        var expectedData = expected.GetProperty("payload");
 
         actualData.GetProperty("access").GetString()
             .Should().Be(expectedData.GetProperty("access").GetString());

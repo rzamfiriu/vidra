@@ -1,0 +1,17 @@
+{
+  "contracts": {
+    "counter": {
+      "nativeMethods": {},
+      "events": {},
+      "jsMethods": {
+        "increment": {
+          "returns": {
+            "kind": "primitive",
+            "tsType": "number"
+          }
+        }
+      }
+    }
+  },
+  "fingerprint": "d3044812d17c42049962d730fced04a6ecd711e287cdd0da7b218b327ee6cd56"
+}

@@ -42,11 +42,7 @@ public sealed class BatteryModule : BridgeModuleBase, IBridgeEventSource
 
     private void PushStatus()
     {
-        _ = _channel?.SendEventAsync(new BridgeEvent
-        {
-            Event = BatteryEvents.Changed,
-            Data = ReadStatus(),
-        });
+        _ = _channel?.SendEventAsync(BatteryEvents.Changed, ReadStatus());
     }
 
     private static BatteryStatus ReadStatus()

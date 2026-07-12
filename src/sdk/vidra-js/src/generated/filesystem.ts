@@ -51,22 +51,22 @@ export class FilesystemProxy {
   constructor(private client: VidraClient) {}
 
   readText(args: ReadTextArgs): Promise<ReadTextResult> {
-    return this.client.invoke("filesystem", "readText", args);
+    return this.client.unsafe.invoke("filesystem", "readText", args);
   }
 
   writeText(args: WriteTextArgs): Promise<WriteTextResult> {
-    return this.client.invoke("filesystem", "writeText", args);
+    return this.client.unsafe.invoke("filesystem", "writeText", args);
   }
 
   exists(args: ExistsArgs): Promise<ExistsResult> {
-    return this.client.invoke("filesystem", "exists", args);
+    return this.client.unsafe.invoke("filesystem", "exists", args);
   }
 
   delete(args: DeleteArgs): Promise<DeleteResult> {
-    return this.client.invoke("filesystem", "delete", args);
+    return this.client.unsafe.invoke("filesystem", "delete", args);
   }
 
   listDirectory(args: ListDirectoryArgs): Promise<ListDirectoryResult> {
-    return this.client.invoke("filesystem", "listDirectory", args);
+    return this.client.unsafe.invoke("filesystem", "listDirectory", args);
   }
 }

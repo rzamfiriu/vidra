@@ -18,8 +18,12 @@ public static class VidraMauiExtensions
     /// </summary>
     public static MauiAppBuilder UseVidra(
         this MauiAppBuilder builder,
-        Action<BridgeDispatcher>? configureModules = null)
+        Action<BridgeDispatcher>? configureModules = null,
+        Action<VidraBridgeOptions>? configureBridge = null)
     {
+        var bridgeOptions = new VidraBridgeOptions();
+        configureBridge?.Invoke(bridgeOptions);
+        builder.Services.AddSingleton(bridgeOptions);
         builder.Services.AddSingleton<IAppWindowService, AppWindowService>();
 
         builder.Services.AddSingleton<BridgeDispatcher>(sp =>
@@ -45,6 +49,20 @@ public static class VidraMauiExtensions
             dispatcher.Register(new ConnectivityModule());
             dispatcher.Register(new BatteryModule());
             dispatcher.Register(new EssentialsSupportModule());
+
+            dispatcher.RegisterEvents(
+                ConnectivityEvents.Changed.Contract,
+                ConnectivityEvents.Changed.Member);
+            dispatcher.RegisterEvents(
+                BatteryEvents.Changed.Contract,
+                BatteryEvents.Changed.Member);
+            dispatcher.RegisterEvents(
+                AppWindowEvents.Resized.Contract,
+                AppWindowEvents.Resized.Member,
+                AppWindowEvents.StateChanged.Member);
+            dispatcher.RegisterEvents(
+                RuntimeEvents.HotReloaded.Contract,
+                RuntimeEvents.HotReloaded.Member);
 
             configureModules?.Invoke(dispatcher);
             return dispatcher;

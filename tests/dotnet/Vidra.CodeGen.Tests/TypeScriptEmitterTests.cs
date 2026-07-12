@@ -41,12 +41,12 @@ public sealed class TypeScriptEmitterTests
     }
 
     [Fact]
-    public void EmitModule_Matches_Snapshot()
+    public void EmitContract_Matches_Snapshot()
     {
         var manifest = ScanFixture();
         var emitter = new TypeScriptEmitter();
 
-        var actual = Normalize(emitter.EmitModule("sample", manifest.Modules["sample"]));
+        var actual = Normalize(emitter.EmitContract("sample", manifest.Contracts["sample"]));
 
         if (ShouldUpdateSnapshots)
         {
@@ -77,33 +77,33 @@ public sealed class TypeScriptEmitterTests
     }
 
     [Fact]
-    public void EmitModule_Emits_Proxy_Class_With_Expected_Name()
+    public void EmitContract_Emits_Proxy_Class_With_Expected_Name()
     {
         var manifest = ScanFixture();
         var emitter = new TypeScriptEmitter();
 
-        var output = emitter.EmitModule("sample", manifest.Modules["sample"]);
+        var output = emitter.EmitContract("sample", manifest.Contracts["sample"]);
         output.Should().Contain("export class SampleProxy");
-        output.Should().Contain("this.client.invoke(\"sample\", \"echo\", args)");
+        output.Should().Contain("this.client.unsafe.invoke(\"sample\", \"echo\", args)");
     }
 
     [Fact]
-    public void EmitModule_Parenthesizes_Enum_Arrays()
+    public void EmitContract_Parenthesizes_Enum_Arrays()
     {
         var manifest = ScanFixture();
         var emitter = new TypeScriptEmitter();
 
-        var output = emitter.EmitModule("sample", manifest.Modules["sample"]);
+        var output = emitter.EmitContract("sample", manifest.Contracts["sample"]);
         output.Should().Contain("moods: (\"happy\" | \"neutral\" | \"sad\")[]");
     }
 
     [Fact]
-    public void EmitModule_Uses_Custom_Sdk_Import()
+    public void EmitContract_Uses_Custom_Sdk_Import()
     {
         var manifest = ScanFixture();
         var emitter = new TypeScriptEmitter();
 
-        var output = emitter.EmitModule("sample", manifest.Modules["sample"], "../sdk/index.js");
+        var output = emitter.EmitContract("sample", manifest.Contracts["sample"], "../sdk/index.js");
         output.Should().Contain("from \"../sdk/index.js\"");
     }
 }

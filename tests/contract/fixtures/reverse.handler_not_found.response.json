@@ -2,7 +2,7 @@
   "id": "rev_2",
   "success": false,
   "error": {
-    "code": "HANDLER_NOT_FOUND",
-    "message": "No JS handler registered for 'confirm'."
+    "code": "JS_HANDLER_NOT_FOUND",
+    "message": "No JavaScript handler registered for 'dialog.confirm'."
   }
 }

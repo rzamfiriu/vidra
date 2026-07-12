@@ -23,10 +23,10 @@ export class FilePickerProxy {
   constructor(private client: VidraClient) {}
 
   pickOne(args: FilePickerPickArgs): Promise<FilePickerPickOneResult> {
-    return this.client.invoke("filePicker", "pickOne", args);
+    return this.client.unsafe.invoke("filePicker", "pickOne", args);
   }
 
   pickMultiple(args: FilePickerPickArgs): Promise<FilePickerPickMultipleResult> {
-    return this.client.invoke("filePicker", "pickMultiple", args);
+    return this.client.unsafe.invoke("filePicker", "pickMultiple", args);
   }
 }

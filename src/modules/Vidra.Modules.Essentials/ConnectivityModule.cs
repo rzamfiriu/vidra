@@ -41,11 +41,7 @@ public sealed class ConnectivityModule : BridgeModuleBase, IBridgeEventSource
             MapAccess(e.NetworkAccess),
             e.ConnectionProfiles.Select(MapProfile).ToArray());
 
-        _ = _channel?.SendEventAsync(new BridgeEvent
-        {
-            Event = ConnectivityEvents.Changed,
-            Data = status,
-        });
+        _ = _channel?.SendEventAsync(ConnectivityEvents.Changed, status);
     }
 
     private static ConnectivityStatus ReadStatus()

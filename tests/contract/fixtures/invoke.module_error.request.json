@@ -1,5 +1,5 @@
 {
   "id": "req_3",
-  "module": "echo",
-  "method": "fail"
+  "contract": "echo",
+  "member": "fail"
 }

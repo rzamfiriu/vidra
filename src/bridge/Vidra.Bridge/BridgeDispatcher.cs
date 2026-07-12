@@ -9,6 +9,7 @@ namespace Vidra.Bridge;
 public sealed class BridgeDispatcher
 {
     private readonly Dictionary<string, IBridgeModule> _modules = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, HashSet<string>> _events = new(StringComparer.OrdinalIgnoreCase);
 
     public void Register(IBridgeModule module)
     {
@@ -22,12 +23,43 @@ public sealed class BridgeDispatcher
     /// </summary>
     public IReadOnlyCollection<IBridgeModule> Modules => _modules.Values.ToList();
 
-    public IReadOnlyDictionary<string, IReadOnlyList<string>> GetCapabilities()
+    public void RegisterEvents(string contract, params string[] members)
     {
-        var caps = new Dictionary<string, IReadOnlyList<string>>();
-        foreach (var (name, module) in _modules)
-            caps[name] = module.SupportedMethods;
-        return caps;
+        if (!_events.TryGetValue(contract, out var registered))
+        {
+            registered = new HashSet<string>(StringComparer.Ordinal);
+            _events[contract] = registered;
+        }
+
+        foreach (var member in members)
+            registered.Add(member);
+    }
+
+    public BridgeCapabilities GetCapabilities()
+    {
+        var contractNames = _modules.Keys
+            .Concat(_events.Keys)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+        var contracts = new Dictionary<string, NativeContractCapabilities>(StringComparer.Ordinal);
+
+        foreach (var contract in contractNames.OrderBy(name => name, StringComparer.Ordinal))
+        {
+            contracts[contract] = new NativeContractCapabilities
+            {
+                Methods = _modules.TryGetValue(contract, out var module)
+                    ? module.SupportedMethods.OrderBy(name => name, StringComparer.Ordinal).ToArray()
+                    : Array.Empty<string>(),
+                Events = _events.TryGetValue(contract, out var events)
+                    ? events.OrderBy(name => name, StringComparer.Ordinal).ToArray()
+                    : Array.Empty<string>(),
+            };
+        }
+
+        return new BridgeCapabilities
+        {
+            ProtocolVersion = BridgeProtocol.Version,
+            NativeContracts = contracts,
+        };
     }
 
     /// <summary>
@@ -60,7 +92,7 @@ public sealed class BridgeDispatcher
             });
         }
 
-        if (request.Module == "__bridge" && request.Method == "capabilities")
+        if (request.Contract == "__bridge" && request.Member == "capabilities")
         {
             return BridgeSerializer.Serialize(new BridgeResponse
             {
@@ -70,20 +102,24 @@ public sealed class BridgeDispatcher
             });
         }
 
-        if (!_modules.TryGetValue(request.Module, out var module))
+        if (!_modules.TryGetValue(request.Contract, out var module))
         {
             return BridgeSerializer.Serialize(new BridgeResponse
             {
                 Id = request.Id,
                 Success = false,
-                Error = new BridgeError { Code = "MODULE_NOT_FOUND", Message = $"No module '{request.Module}' is registered." },
+                Error = new BridgeError
+                {
+                    Code = "NATIVE_CONTRACT_NOT_FOUND",
+                    Message = $"No native contract '{request.Contract}' is registered.",
+                },
             });
         }
 
         try
         {
             var payload = request.Payload.HasValue ? new JsonPayload(request.Payload.Value) : null;
-            var result = await module.HandleAsync(request.Method, payload, ct);
+            var result = await module.HandleAsync(request.Member, payload, ct);
 
             return BridgeSerializer.Serialize(new BridgeResponse
             {
@@ -98,7 +134,7 @@ public sealed class BridgeDispatcher
             {
                 Id = request.Id,
                 Success = false,
-                Error = new BridgeError { Code = "MODULE_ERROR", Message = ex.Message },
+                Error = new BridgeError { Code = "NATIVE_MEMBER_ERROR", Message = ex.Message },
             });
         }
     }

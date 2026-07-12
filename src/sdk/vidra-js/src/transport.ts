@@ -107,7 +107,7 @@ export class CustomSchemeTransport implements Transport {
 export class BrowserFallbackTransport implements Transport {
   send(request: BridgeRequest): void {
     console.warn(
-      `[vidra] No native host detected. Browser stub for: ${request.module}.${request.method}`,
+      `[vidra] No native host detected. Browser stub for: ${request.contract}.${request.member}`,
       request
     );
 
@@ -119,7 +119,7 @@ export class BrowserFallbackTransport implements Transport {
           success: false,
           error: {
             code: "BROWSER_ONLY",
-            message: `Native host not available. '${request.module}.${request.method}' requires the MAUI shell.`,
+            message: `Native host not available. '${request.contract}.${request.member}' requires the MAUI shell.`,
           },
         };
         callback(response);

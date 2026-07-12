@@ -37,6 +37,7 @@ jobs:
         run: |
           dotnet restore tests/dotnet/Vidra.Bridge.Tests/Vidra.Bridge.Tests.csproj
           dotnet restore tests/dotnet/Vidra.CodeGen.Tests/Vidra.CodeGen.Tests.csproj
+          dotnet restore tests/dotnet/Vidra.CodeGen.AppFixture/Vidra.CodeGen.AppFixture.csproj
           dotnet restore tests/dotnet/Vidra.Modules.FileSystem.Tests/Vidra.Modules.FileSystem.Tests.csproj
           dotnet restore tests/dotnet/Vidra.Modules.Windowing.Tests/Vidra.Modules.Windowing.Tests.csproj
           dotnet restore tests/dotnet/Vidra.Modules.Essentials.Tests/Vidra.Modules.Essentials.Tests.csproj
@@ -45,6 +46,7 @@ jobs:
         run: |
           dotnet build tests/dotnet/Vidra.Bridge.Tests/Vidra.Bridge.Tests.csproj -c Release --no-restore
           dotnet build tests/dotnet/Vidra.CodeGen.Tests/Vidra.CodeGen.Tests.csproj -c Release --no-restore
+          dotnet build tests/dotnet/Vidra.CodeGen.AppFixture/Vidra.CodeGen.AppFixture.csproj -c Release --no-restore
           dotnet build tests/dotnet/Vidra.Modules.FileSystem.Tests/Vidra.Modules.FileSystem.Tests.csproj -c Release --no-restore
           dotnet build tests/dotnet/Vidra.Modules.Windowing.Tests/Vidra.Modules.Windowing.Tests.csproj -c Release --no-restore
           dotnet build tests/dotnet/Vidra.Modules.Essentials.Tests/Vidra.Modules.Essentials.Tests.csproj -c Release --no-restore
@@ -54,6 +56,9 @@ jobs:
 
       - name: Run Vidra.CodeGen.Tests
         run: dotnet test tests/dotnet/Vidra.CodeGen.Tests/Vidra.CodeGen.Tests.csproj -c Release --no-build --logger "trx;LogFileName=codegen.trx"
+
+      - name: Check generated app contracts are fresh
+        run: dotnet msbuild tests/dotnet/Vidra.CodeGen.AppFixture/Vidra.CodeGen.AppFixture.csproj -p:Configuration=Release -t:VidraCodeGenCheck
 
       - name: Run Vidra.Modules.FileSystem.Tests
         run: dotnet test tests/dotnet/Vidra.Modules.FileSystem.Tests/Vidra.Modules.FileSystem.Tests.csproj -c Release --no-build --logger "trx;LogFileName=modules-filesystem.trx"

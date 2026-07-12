@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Text.Json;
 using Vidra.Bridge;
 
@@ -9,7 +8,7 @@ namespace Vidra.Hosting;
 /// Intercepts <c>vidra://bridge</c> navigation requests from JS and dispatches them.
 /// Pushes responses and events back via <c>EvaluateJavaScriptAsync</c>.
 /// </summary>
-public sealed partial class WebViewBridge : IJsCallbackChannel
+public sealed partial class WebViewBridge : IJsCallbackChannel, IUnsafeJsCallbackChannel
 {
     /// <summary>
     /// Name of the native message channel. JS posts to
@@ -20,14 +19,17 @@ public sealed partial class WebViewBridge : IJsCallbackChannel
     private const string ChannelName = "vidra";
 
     private readonly BridgeDispatcher _dispatcher;
-    private readonly ConcurrentDictionary<string, TaskCompletionSource<string>> _pendingReverseCalls = new();
-    private int _reverseIdCounter;
+    private readonly VidraBridgeOptions _options;
+    private readonly PendingJsCallRegistry _pendingJsCalls = new();
     private WebView? _webView;
 
-    public WebViewBridge(BridgeDispatcher dispatcher)
+    public WebViewBridge(BridgeDispatcher dispatcher, VidraBridgeOptions? options = null)
     {
         _dispatcher = dispatcher;
+        _options = options ?? new VidraBridgeOptions();
     }
+
+    public IUnsafeJsCallbackChannel Unsafe => this;
 
     public void Attach(WebView webView)
     {
@@ -85,6 +87,24 @@ public sealed partial class WebViewBridge : IJsCallbackChannel
     private async void OnNavigated(object? sender, WebNavigatedEventArgs e)
     {
         await PushToJsAsync("window.__vidra_native = true");
+
+        var handshake = new BridgeHandshake
+        {
+            ProtocolVersion = BridgeProtocol.Version,
+            CoreFingerprint = BridgeContractRegistry.Fingerprint(BridgeManifestScope.Core),
+            AppFingerprint = BridgeContractRegistry.Fingerprint(BridgeManifestScope.App),
+        };
+        try
+        {
+            await PushToJsAsync($"window.__vidra_initialize({BridgeSerializer.Serialize(handshake)})");
+        }
+        catch (Exception ex)
+        {
+            // Protocol mismatch handling renders its diagnostic before throwing
+            // in JavaScript; keep the native UI thread alive so it remains visible.
+            System.Diagnostics.Debug.WriteLine(
+                $"[Vidra] Bridge protocol initialization failed: {ex.Message}");
+        }
     }
 
     private async void OnNavigating(object? sender, WebNavigatingEventArgs e)
@@ -108,56 +128,160 @@ public sealed partial class WebViewBridge : IJsCallbackChannel
         await PushToJsAsync($"window.__vidra_callback({response})");
     }
 
-    public async Task SendEventAsync(BridgeEvent bridgeEvent, CancellationToken ct = default)
+    public Task SendEventAsync(BridgeEventToken eventToken, CancellationToken ct = default)
+        => SendEventCoreAsync(eventToken.Contract, eventToken.Member, null, ct);
+
+    public Task SendEventAsync<TPayload>(
+        BridgeEventToken<TPayload> eventToken,
+        TPayload payload,
+        CancellationToken ct = default)
+        => SendEventCoreAsync(
+            eventToken.Contract,
+            eventToken.Member,
+            eventToken.SerializePayload(payload),
+            ct);
+
+    Task IUnsafeJsCallbackChannel.SendEventAsync(
+        string contract,
+        string member,
+        object? payload,
+        CancellationToken ct)
+        => SendEventCoreAsync(contract, member, SerializeUnsafePayload(payload), ct);
+
+    private async Task SendEventCoreAsync(
+        string contract,
+        string member,
+        JsonElement? payload,
+        CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
+        var bridgeEvent = new BridgeEvent
+        {
+            Contract = contract,
+            Member = member,
+            Payload = payload,
+        };
         var json = BridgeSerializer.Serialize(bridgeEvent);
         await PushToJsAsync($"window.__vidra_onevent({json})");
     }
 
-    public async Task<T> CallJsAsync<T>(string handler, object? payload = null, CancellationToken ct = default)
+    public async Task CallJsAsync(JsMethodToken method, CancellationToken ct = default)
+        => await CallJsCoreAsync(method.Contract, method.Member, null, ct);
+
+    public async Task<TResult> CallJsAsync<TResult>(
+        JsMethodToken<TResult> method,
+        CancellationToken ct = default)
     {
-        var id = $"rev_{Interlocked.Increment(ref _reverseIdCounter)}_{Environment.TickCount64}";
-        var tcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _pendingReverseCalls[id] = tcs;
+        var response = await CallJsCoreAsync(method.Contract, method.Member, null, ct);
+        return DeserializeResult(response, method.DeserializeResult);
+    }
 
-        using var ctr = ct.Register(() =>
-        {
-            if (_pendingReverseCalls.TryRemove(id, out var removed))
-                removed.TrySetCanceled(ct);
-        });
+    public async Task CallJsAsync<TPayload>(
+        JsMethodPayloadToken<TPayload> method,
+        TPayload payload,
+        CancellationToken ct = default)
+        => await CallJsCoreAsync(
+            method.Contract,
+            method.Member,
+            method.SerializePayload(payload),
+            ct);
 
-        var request = new ReverseRequest { Id = id, Handler = handler, Payload = payload };
-        var requestJson = BridgeSerializer.Serialize(request);
-        await PushToJsAsync($"window.__vidra_invoke({requestJson})");
+    public async Task<TResult> CallJsAsync<TPayload, TResult>(
+        JsMethodToken<TPayload, TResult> method,
+        TPayload payload,
+        CancellationToken ct = default)
+    {
+        var response = await CallJsCoreAsync(
+            method.Contract,
+            method.Member,
+            method.SerializePayload(payload),
+            ct);
+        return DeserializeResult(response, method.DeserializeResult);
+    }
 
-        var responseJson = await tcs.Task;
-        var response = JsonSerializer.Deserialize<ReverseResponse>(responseJson, BridgeSerializer.Default);
-
-        if (response is null)
-            throw new InvalidOperationException("Failed to deserialize reverse RPC response.");
-
-        if (!response.Success)
-        {
-            var code = response.Error?.Code ?? "UNKNOWN";
-            var message = response.Error?.Message ?? "Unknown error from JS handler.";
-            throw new InvalidOperationException($"[{code}] {message}");
-        }
+    async Task<TResult> IUnsafeJsCallbackChannel.CallJsAsync<TResult>(
+        string contract,
+        string member,
+        object? payload,
+        CancellationToken ct)
+    {
+        var response = await CallJsCoreAsync(contract, member, SerializeUnsafePayload(payload), ct);
 
         if (response.Data is null || response.Data.Value.ValueKind == JsonValueKind.Null)
             return default!;
 
-        return JsonSerializer.Deserialize<T>(response.Data.Value.GetRawText(), BridgeSerializer.Default)!;
+        return JsonSerializer.Deserialize<TResult>(
+            response.Data.Value.GetRawText(),
+            BridgeSerializer.Default)!;
     }
+
+    private async Task<ReverseResponse> CallJsCoreAsync(
+        string contract,
+        string member,
+        JsonElement? payload,
+        CancellationToken ct)
+    {
+        var pending = _pendingJsCalls.Create(contract, member);
+
+        try
+        {
+            var request = new ReverseRequest
+            {
+                Id = pending.Id,
+                Contract = contract,
+                Member = member,
+                Payload = payload,
+            };
+            var requestJson = BridgeSerializer.Serialize(request);
+            await PushToJsAsync($"window.__vidra_invoke({requestJson})");
+
+            var responseJson = await _pendingJsCalls.WaitAsync(
+                pending,
+                _options.JsContractTimeout,
+                ct);
+
+            var response = JsonSerializer.Deserialize<ReverseResponse>(responseJson, BridgeSerializer.Default)
+                ?? throw new JsRemoteException(
+                    "JS_RESPONSE_INVALID",
+                    $"JavaScript contract '{contract}.{member}' returned an invalid response.");
+
+            if (!response.Success)
+            {
+                var code = response.Error?.Code ?? "JS_HANDLER_ERROR";
+                var message = response.Error?.Message ?? "Unknown error from JavaScript handler.";
+                throw new JsRemoteException(code, message);
+            }
+
+            return response;
+        }
+        finally
+        {
+            _pendingJsCalls.Remove(pending.Id);
+        }
+    }
+
+    private static TResult DeserializeResult<TResult>(
+        ReverseResponse response,
+        Func<JsonElement, TResult> deserialize)
+    {
+        if (response.Data is null || response.Data.Value.ValueKind == JsonValueKind.Null)
+            return default!;
+
+        return deserialize(response.Data.Value);
+    }
+
+    private static JsonElement? SerializeUnsafePayload(object? payload)
+        => payload is null
+            ? null
+            : JsonSerializer.SerializeToElement(payload, payload.GetType(), BridgeSerializer.Default);
 
     private void HandleReverseResponse(string responseJson)
     {
         try
         {
             var response = JsonSerializer.Deserialize<ReverseResponse>(responseJson, BridgeSerializer.Default);
-            if (response is not null && _pendingReverseCalls.TryRemove(response.Id, out var tcs))
-            {
-                tcs.TrySetResult(responseJson);
-            }
+            if (response is not null)
+                _pendingJsCalls.TryComplete(response.Id, responseJson);
         }
         catch (Exception ex)
         {
