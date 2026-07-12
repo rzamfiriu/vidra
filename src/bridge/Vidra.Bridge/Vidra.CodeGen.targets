@@ -29,7 +29,7 @@
 
   <Target Name="VidraCodeGen"
           AfterTargets="Build"
-          Condition="'$(VidraGenerateTs)' == 'true' AND '$(TargetFramework)' != '' AND '$(VidraTsOutputDir)' != ''">
+          Condition="'$(VidraGenerateTs)' == 'true' AND '$(TargetFramework)' != '' AND '$(VidraTsOutputDir)' != '' AND Exists('$(TargetPath)')">
 
     <Message Importance="high" Text="[Vidra] Generating TypeScript proxies from $(TargetPath)..." />
 
@@ -42,7 +42,7 @@
   </Target>
 
   <Target Name="VidraCodeGenCheck"
-          Condition="'$(VidraGenerateTs)' == 'true' AND '$(TargetFramework)' != '' AND '$(VidraTsOutputDir)' != ''">
+          Condition="'$(VidraGenerateTs)' == 'true' AND '$(TargetFramework)' != '' AND '$(VidraTsOutputDir)' != '' AND Exists('$(TargetPath)')">
     <Exec Command="$(VidraCodeGenCommand) generate --assembly &quot;$(TargetPath)&quot; --output &quot;$(VidraTsOutputDir)&quot; --sdk-import &quot;$(VidraSdkImport)&quot; --scope &quot;$(VidraContractScope)&quot; --check"
           WorkingDirectory="$(MSBuildProjectDirectory)"
           IgnoreExitCode="false" />
