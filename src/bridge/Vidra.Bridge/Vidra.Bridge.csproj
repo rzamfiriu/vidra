@@ -31,18 +31,9 @@
   </ItemGroup>
 
   <Target Name="BuildVidraCodeGenPackAssets" BeforeTargets="GenerateNuspec">
-    <MSBuild Projects="../../tools/Vidra.CodeGen.Generator/Vidra.CodeGen.Generator.csproj;
-                       ../../tools/Vidra.CodeGen/Vidra.CodeGen.csproj"
-             Targets="Restore"
-             BuildInParallel="false"
-             UnloadProjectsOnCompletion="true"
-             Properties="Configuration=$(Configuration)" />
-    <MSBuild Projects="../../tools/Vidra.CodeGen.Generator/Vidra.CodeGen.Generator.csproj;
-                       ../../tools/Vidra.CodeGen/Vidra.CodeGen.csproj"
-             Targets="Build"
-             BuildInParallel="false"
-             UnloadProjectsOnCompletion="true"
-             Properties="Configuration=$(Configuration)" />
+
+    <Exec Command="dotnet build &quot;$(MSBuildProjectDirectory)/../../tools/Vidra.CodeGen.Generator/Vidra.CodeGen.Generator.csproj&quot; --configuration &quot;$(Configuration)&quot;" />
+    <Exec Command="dotnet build &quot;$(MSBuildProjectDirectory)/../../tools/Vidra.CodeGen/Vidra.CodeGen.csproj&quot; --configuration &quot;$(Configuration)&quot;" />
   </Target>
 
 </Project>
