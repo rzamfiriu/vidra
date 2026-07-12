@@ -34,7 +34,7 @@
   <Target Name="BuildVidraCodeGenPackAssets" BeforeTargets="GenerateNuspec">
     <MSBuild Projects="../../tools/Vidra.CodeGen.Generator/Vidra.CodeGen.Generator.csproj;
                        ../../tools/Vidra.CodeGen/Vidra.CodeGen.csproj"
-             Targets="Build"
+             Targets="Restore;Build"
              Properties="Configuration=$(Configuration)" />
   </Target>
 
