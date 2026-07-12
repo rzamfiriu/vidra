@@ -21,8 +21,7 @@
     <None Include="../../tools/Vidra.CodeGen.Model/bin/$(Configuration)/netstandard2.0/Vidra.CodeGen.Model.dll"
           Pack="true"
           PackagePath="analyzers/dotnet/cs" />
-    <None Include="../../tools/Vidra.CodeGen/bin/$(Configuration)/net10.0/Vidra.CodeGen;
-                   ../../tools/Vidra.CodeGen/bin/$(Configuration)/net10.0/Vidra.CodeGen.dll;
+    <None Include="../../tools/Vidra.CodeGen/bin/$(Configuration)/net10.0/Vidra.CodeGen.dll;
                    ../../tools/Vidra.CodeGen/bin/$(Configuration)/net10.0/Vidra.CodeGen.deps.json;
                    ../../tools/Vidra.CodeGen/bin/$(Configuration)/net10.0/Vidra.CodeGen.runtimeconfig.json;
                    ../../tools/Vidra.CodeGen/bin/$(Configuration)/net10.0/Vidra.CodeGen.Model.dll;
@@ -34,7 +33,15 @@
   <Target Name="BuildVidraCodeGenPackAssets" BeforeTargets="GenerateNuspec">
     <MSBuild Projects="../../tools/Vidra.CodeGen.Generator/Vidra.CodeGen.Generator.csproj;
                        ../../tools/Vidra.CodeGen/Vidra.CodeGen.csproj"
-             Targets="Restore;Build"
+             Targets="Restore"
+             BuildInParallel="false"
+             UnloadProjectsOnCompletion="true"
+             Properties="Configuration=$(Configuration)" />
+    <MSBuild Projects="../../tools/Vidra.CodeGen.Generator/Vidra.CodeGen.Generator.csproj;
+                       ../../tools/Vidra.CodeGen/Vidra.CodeGen.csproj"
+             Targets="Build"
+             BuildInParallel="false"
+             UnloadProjectsOnCompletion="true"
              Properties="Configuration=$(Configuration)" />
   </Target>
 
