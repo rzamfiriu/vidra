@@ -127,6 +127,18 @@ describe("scaffold integration", () => {
     expect(content).not.toMatch(/\{\{.+?\}\}/);
   });
 
+  it("keeps the capabilities client and result type imported", async () => {
+    const app = await fs.readFile(
+      path.join(root, "ui", "src", "App.tsx"),
+      "utf8",
+    );
+
+    expect(app).toMatch(/\bvidra,\s*\n\} from "@vidra-dev\/sdk"/);
+    expect(app).toContain("Capabilities, WindowInfo, WindowSupport");
+    expect(app).toContain("useState<Capabilities | null>");
+    expect(app).toContain("vidra.capabilities()");
+  });
+
   it.skipIf(!SHOULD_RUN_DOTNET)(
     "dotnet restore succeeds on the host project",
     () => {

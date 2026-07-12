@@ -1,6 +1,14 @@
 import { type MouseEvent, useEffect, useRef, useState } from "react";
-import { app, appWindow, browser, clipboard, notifications, runtime } from "@vidra-dev/sdk";
-import type { WindowInfo, WindowSupport } from "@vidra-dev/sdk";
+import {
+  app,
+  appWindow,
+  browser,
+  clipboard,
+  notifications,
+  runtime,
+  vidra,
+} from "@vidra-dev/sdk";
+import type { Capabilities, WindowInfo, WindowSupport } from "@vidra-dev/sdk";
 import { counterHandlers } from "./generated/index.js";
 
 const describeWindow = (windowInfo: WindowInfo): string => {
@@ -18,7 +26,7 @@ const App = () => {
     "Window controls are ready. Click a button to inspect or update the native window.",
   );
   const [windowSupport, setWindowSupport] = useState<WindowSupport | null>(null);
-  const [caps, setCaps] = useState<Record<string, string[]> | null>(null);
+  const [caps, setCaps] = useState<Capabilities | null>(null);
   const [count, setCount] = useState(0);
   const [csReloaded, setCsReloaded] = useState<string | null>(null);
   const countRef = useRef(0);
