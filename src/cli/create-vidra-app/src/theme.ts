@@ -10,7 +10,7 @@ import chalk, { type ChalkInstance } from "chalk";
  * use the palette unconditionally.
  */
 
-export const CLI_VERSION = "0.3.0";
+export const CLI_VERSION = "0.3.1";
 
 /** Shared width of the bright label column in step/check rows, for alignment. */
 export const STEP_LABEL_WIDTH = 16;

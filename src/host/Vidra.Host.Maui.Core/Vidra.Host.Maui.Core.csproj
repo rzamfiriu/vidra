@@ -12,7 +12,7 @@
     <VidraContractScope>Core</VidraContractScope>
 
     <PackageId>Vidra.Hosting.Maui</PackageId>
-    <Version>0.3.0</Version>
+    <Version>0.3.1</Version>
     <Description>MAUI host infrastructure for Vidra — WebView bridge, DI extensions, and base page.</Description>
   </PropertyGroup>
 
