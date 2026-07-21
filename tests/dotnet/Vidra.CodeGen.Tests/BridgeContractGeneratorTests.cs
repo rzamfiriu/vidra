@@ -32,6 +32,20 @@ public sealed class BridgeContractGeneratorTests
         """;
 
     [Fact]
+    public void Generator_References_Minimum_Supported_Roslyn()
+    {
+        // The compiler skips analyzers built against a newer Microsoft.CodeAnalysis
+        // than itself (CS9057), which silently disables all bridge codegen for
+        // consumers on older .NET SDKs. Keep the generator pinned to the oldest
+        // Roslyn we support (4.8.0 = .NET SDK 8.0.100).
+        var roslynReference = typeof(BridgeContractGenerator).Assembly
+            .GetReferencedAssemblies()
+            .Single(reference => reference.Name == "Microsoft.CodeAnalysis");
+
+        roslynReference.Version.Should().BeLessThanOrEqualTo(new Version(4, 8, 0, 0));
+    }
+
+    [Fact]
     public void Generator_Emits_Typed_Event_Tokens_And_Js_Facade()
     {
         var result = Run(Source);
