@@ -17,7 +17,7 @@ const printHelp = (): void => {
     ${lime("vidra")} ${dim("<command> [options]")}
 
   ${dim("commands")}
-${cmd("dev", "start vite + the native host (UI + C# hot reload)")}
+${cmd("dev", "start vite + the native host (UI + C# reload on save)")}
 ${cmd("run", "launch the native host only")}
 ${cmd("build", "build & package for distribution")}
 ${cmd("verify", "check a built artifact is actually shippable")}

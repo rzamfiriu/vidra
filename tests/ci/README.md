@@ -16,7 +16,7 @@ ever launched the app.
 | `verify-macos-artifact.sh` | macOS | Asserts the signature, hardened runtime and entitlements of a built `.dmg` |
 | `launch-macos-app.sh` | macOS | Mounts the `.dmg`, launches the app, and asserts a real bridge round-trip |
 | `launch-windows-app.ps1` | Windows | Unzips, checks the Authenticode signature, launches, and asserts the same |
-| `dev-loop-smoke.sh` | macOS | Starts `vidra dev` and asserts the session comes up: Vite serves, the host builds under `dotnet watch`, the watcher arms itself |
+| `dev-loop-smoke.sh` | macOS | Starts `vidra dev` and asserts the loop works: Vite serves, the host builds under `dotnet watch`, the app reaches readiness, and a C# edit brings it back up |
 | `npm-publish.sh` | any | Publishes an npm package idempotently (used by `release-npm.yml`) |
 
 ## Why self-signed certificates work here
@@ -97,28 +97,28 @@ so it is harmless if left in place.
 
 ## The dev-loop smoke
 
-`dev-loop-smoke.sh` covers `vidra dev` and C# hot reload, which previously had no
-automated coverage at all — unit tests cover argument construction and log
+`dev-loop-smoke.sh` covers `vidra dev` and the C# dev loop, which previously had
+no automated coverage at all — unit tests cover argument construction and log
 classification, but nothing ever started a real session.
 
-It hard-asserts what is genuinely verifiable today, all time-bounded: `vidra dev`
-starts, Vite reports ready, the host project builds under `dotnet watch`, and the
-watcher arms itself.
+Everything in it is a hard assertion, all time-bounded: `vidra dev` starts, Vite
+reports ready, the host project builds under `dotnet watch`, the app reports
+itself ready (the CLI prints `host ready` only after the host process emits the
+`[vidra] host ready` sentinel from `VidraPage`), and a C# edit is followed by the
+app being ready again.
 
-Two further signals are **reported as warnings rather than asserted**, because
-the platform cannot currently deliver them and gating on them would pin a
-known-broken behaviour as the spec:
+That last pair used to be reported as warnings rather than asserted, because on
+Mac Catalyst `dotnet watch run` never launched the app — `dotnet run` does not
+produce the `.app` bundle its `RunCommand` points at — so the session parked in
+"Waiting for a file to change before restarting" and reacted to nothing. `vidra
+dev` now drives Catalyst with `dotnet watch build` plus a launch of its own, so
+the loop works and the checks gate again.
 
-1. the `[vidra] host ready` sentinel — `dotnet watch run` never launches the app
-   on Mac Catalyst (`dotnet run` does not produce the `.app` bundle its
-   `RunCommand` points at), so the session parks in "Waiting for a file to
-   change before restarting";
-2. the watcher's reaction to a C# edit — from that parked state no edit produces
-   any output at all, verified with native *and* polling file watching
-   (`DOTNET_USE_POLLING_FILE_WATCHER=1` plus an explicit `touch`).
-
-Both appear in the log when they occur. The packaged app launches fine — the
-runtime E2E step proves that separately — so this is specific to the watch path.
+What is deliberately **not** asserted is *how* an edit lands. On Windows it is a
+hot reload delta; on Mac Catalyst MAUI sets `StartupHookSupport=False`, so it is
+a rebuild and relaunch. Both are correct outcomes, and pinning either would make
+the test lie on the other platform — what both owe us is a running app
+afterwards, which is what the second readiness check requires.
 
 It runs before the E2E MainPage is installed, since that variant exits the
 process on success and would end the session immediately. **macOS only:** the
@@ -134,6 +134,6 @@ provide.
 | `VIDRA_CI_IDENTITY_CN` | `macos-selfsigned-identity.sh` | Common name of the generated identity |
 | `VIDRA_CI_KEYCHAIN` / `VIDRA_CI_KEYCHAIN_PASSWORD` | `macos-selfsigned-identity.sh` | Temporary keychain name and password |
 | `VIDRA_CI_CERT_SUBJECT` | `windows-selfsigned-cert.ps1` | Subject of the generated certificate |
-| `VIDRA_DEV_READY_TIMEOUT` | `dev-loop-smoke.sh` | Seconds to wait for the watch session to build (default 300) |
-| `VIDRA_DEV_RELOAD_TIMEOUT` | `dev-loop-smoke.sh` | Seconds to wait for the watcher to react before warning (default 45) |
+| `VIDRA_DEV_READY_TIMEOUT` | `dev-loop-smoke.sh` | Seconds to wait for the app to reach readiness (default 300) |
+| `VIDRA_DEV_RELOAD_TIMEOUT` | `dev-loop-smoke.sh` | Seconds to wait for the app to be ready again after a C# edit (default 180) |
 | `PUSH` / `PROVENANCE` / `NODE_AUTH_TOKEN` | `npm-publish.sh` | Publish for real, attach provenance, npm auth |

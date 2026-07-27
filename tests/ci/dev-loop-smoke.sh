@@ -1,22 +1,27 @@
 #!/usr/bin/env bash
-# Exercise `vidra dev` end to end: Vite starts, the host builds and launches, and
-# a C# edit is picked up by the watcher.
+# Exercise `vidra dev` end to end: Vite starts, the host builds under
+# `dotnet watch`, the app actually launches, and a C# edit puts a fresh build of
+# it back on screen.
 #
 # Usage: dev-loop-smoke.sh <path/to/scaffolded/app> <path/to/cli.js> <macos|windows>
 #
-# C# hot reload is the headline feature of the 0.3 line and had no automated
+# The C# dev loop is the headline feature of the 0.3 line and had no automated
 # coverage at all — unit tests cover argument construction and log
 # classification, but nothing ever started a real session.
 #
-# What is hard-asserted here is that the session comes up: `vidra dev` starts,
-# Vite reports ready, the host project builds under `dotnet watch`, and the
-# watcher arms itself.
+# Everything here is a hard assertion. It did not used to be: on Mac Catalyst
+# `dotnet watch run` never launched the app (`dotnet run` does not produce the
+# .app bundle its RunCommand points at), so the session parked forever and the
+# two most valuable checks — the app reaching readiness, and reacting to an
+# edit — could only be reported as warnings. `vidra dev` now drives Catalyst
+# with `dotnet watch build` plus a launch of its own, which is a loop that
+# works, so the checks gate again.
 #
-# Two further signals are REPORTED as warnings rather than asserted — the host
-# ready sentinel and the watcher's reaction to a C# edit — because
-# `dotnet watch run` never launches the app on Mac Catalyst. Gating on them
-# would pin a known-broken platform behaviour as the spec. See the comments at
-# each check for the measured detail.
+# What is deliberately NOT asserted is *how* the edit lands. On Windows it is a
+# hot reload delta; on Mac Catalyst MAUI sets StartupHookSupport=False, so it is
+# a rebuild and relaunch. Both are correct, and pinning one would make the test
+# lie on the other platform. What both owe us is a running app afterwards, and
+# that is what we check.
 #
 # Everything is time-bounded and the session is always torn down, because a
 # hanging dev server is exactly the failure this must not cause.
@@ -27,7 +32,7 @@ CLI="${2:?missing cli.js path}"
 TARGET="${3:?missing target}"
 
 READY_TIMEOUT="${VIDRA_DEV_READY_TIMEOUT:-300}"
-RELOAD_TIMEOUT="${VIDRA_DEV_RELOAD_TIMEOUT:-45}"
+RELOAD_TIMEOUT="${VIDRA_DEV_RELOAD_TIMEOUT:-180}"
 
 # dotnet watch's default file watcher relies on native filesystem notifications,
 # which routinely fail to fire for a working directory on a CI runner — the
@@ -35,36 +40,50 @@ RELOAD_TIMEOUT="${VIDRA_DEV_RELOAD_TIMEOUT:-45}"
 # Polling is slower but deterministic, which is the right trade for a test.
 export DOTNET_USE_POLLING_FILE_WATCHER="${DOTNET_USE_POLLING_FILE_WATCHER:-1}"
 
-# What we can assert today is that the watch session comes up: Vite serves, the
-# host project builds under `dotnet watch`, and the watcher arms itself.
-#
-# We deliberately do NOT require the app to reach the `[vidra] host ready`
-# sentinel. On Mac Catalyst `dotnet watch run` fails to launch it:
-#
-#   Unhandled exception: An error occurred trying to start process
-#   '.../maccatalyst-arm64//<App>.app/Contents/MacOS/<App>' ... No such file or directory
-#
-# `dotnet run` does not produce the .app bundle its RunCommand points at, and
-# MAUI sets StartupHookSupport=False for Catalyst so watch degrades to
-# restart-on-change regardless. Requiring the sentinel would pin a bug as if it
-# were the spec. See .knowledge in vidra-meta; the packaged app launches fine,
-# which the runtime E2E step proves separately.
-READY_PATTERN='Build succeeded|Waiting for changes|hot reload active'
-SENTINEL="[vidra] host ready"
+# The CLI prints this once per launch, and only after the host process itself
+# printed the `[vidra] host ready` sentinel from VidraPage — so it means the app
+# got as far as loading its page, not merely that a process was spawned.
+READY_LINE='host ready'
 
 LOG="$(mktemp)"
 cd "$APP_DIR"
 
 cleanup() {
   if [ -n "${DEV_PID:-}" ] && kill -0 "$DEV_PID" 2>/dev/null; then
-    # `vidra dev` supervises Vite and a dotnet watch process group, so signal
-    # the group and give it a moment to take its children with it.
+    # `vidra dev` supervises Vite, a dotnet watch process group and the app it
+    # launched, so signal the group and give it a moment to take its children
+    # with it.
     kill -TERM "-$DEV_PID" 2>/dev/null || kill -TERM "$DEV_PID" 2>/dev/null || true
     sleep 3
     kill -KILL "-$DEV_PID" 2>/dev/null || kill -KILL "$DEV_PID" 2>/dev/null || true
   fi
 }
 trap cleanup EXIT
+
+dump_log() { sed -e 's/^/    /' "$LOG"; }
+
+# Number of times the session has reported a ready host so far. The raw
+# `[vidra] host ready` sentinel is filtered out of the passthrough output, but
+# excluding it explicitly keeps the count meaning "the CLI said so" even if a
+# chunk boundary ever lets one through.
+ready_count() { grep "$READY_LINE" "$LOG" | grep -cv '\[vidra\]'; }
+
+# Waits until at least $1 ready reports have been seen, or $2 seconds elapse.
+# Fails the run if `vidra dev` dies while we wait.
+wait_for_ready() {
+  local want="$1" limit="$2" waited=0
+  while [ "$waited" -lt "$limit" ]; do
+    [ "$(ready_count)" -ge "$want" ] && return 0
+    if ! kill -0 "$DEV_PID" 2>/dev/null; then
+      echo "::error::vidra dev exited before the host reached readiness"
+      dump_log
+      exit 1
+    fi
+    sleep 2
+    waited=$((waited + 2))
+  done
+  return 1
+}
 
 echo "==> starting: vidra dev --target $TARGET"
 # `setsid` is util-linux and does not exist on macOS. Enabling job control makes
@@ -75,52 +94,19 @@ node "$CLI" dev --target "$TARGET" >"$LOG" 2>&1 &
 DEV_PID=$!
 set +m
 
-waited=0
-while [ "$waited" -lt "$READY_TIMEOUT" ]; do
-  grep -qE "$READY_PATTERN" "$LOG" && break
-  if ! kill -0 "$DEV_PID" 2>/dev/null; then
-    echo "::error::vidra dev exited before the watch session came up"
-    sed -e 's/^/    /' "$LOG"
-    exit 1
-  fi
-  sleep 2
-  waited=$((waited + 2))
-done
-
-if ! grep -qE "$READY_PATTERN" "$LOG"; then
-  echo "::error::the watch session never built within ${READY_TIMEOUT}s"
-  sed -e 's/^/    /' "$LOG"
+if ! wait_for_ready 1 "$READY_TIMEOUT"; then
+  echo "::error::the host never reached readiness within ${READY_TIMEOUT}s"
+  dump_log
   exit 1
 fi
-echo "==> watch session up after ~${waited}s"
+echo "==> host ready"
 
 grep -q "vite ready" "$LOG" \
-  || { echo "::error::Vite never reported ready"; sed -e 's/^/    /' "$LOG"; exit 1; }
+  || { echo "::error::Vite never reported ready"; dump_log; exit 1; }
 echo "==> vite ready"
 
-# Informational: flags the known Catalyst launch failure without failing on it.
-if grep -qF "$SENTINEL" "$LOG"; then
-  echo "==> host reached the ready sentinel"
-elif grep -q "app exited before it was ready" "$LOG"; then
-  echo "::warning::the host did not launch under dotnet watch (known Mac Catalyst issue); the watch session itself is healthy"
-fi
-
-# Touch a method body and observe whether the watcher reacts.
-#
-# This is REPORTED, not asserted. Two measured facts make it unassertable today,
-# and both are properties of the platform rather than of this test:
-#
-#   1. `dotnet watch run` never launches the app on Mac Catalyst — `dotnet run`
-#      does not produce the .app bundle its RunCommand points at — so the
-#      session sits in "Waiting for a file to change before restarting".
-#   2. From that state no edit produces any output at all, with native *or*
-#      polling file watching (verified: DOTNET_USE_POLLING_FILE_WATCHER=1 and an
-#      explicit touch(1) both changed nothing).
-#
-# Gating on it would pin a known-broken platform behaviour as the spec, and the
-# failure is loud in the log either way. The checks above — Vite serving, the
-# host building under dotnet watch, the watcher arming itself — are real and
-# stay hard assertions.
+# Touch a method body and require the session to put a running app back up.
+# Whether that happens by delta or by relaunch is the platform's business.
 MAIN_PAGE="$(find src -name 'MainPage.cs' -print -quit)"
 if [ -z "$MAIN_PAGE" ]; then
   echo "::error::could not find MainPage.cs to edit"
@@ -132,27 +118,15 @@ before="$(wc -l < "$LOG")"
 printf '\n// touched by dev-loop-smoke at build time\n' >> "$MAIN_PAGE"
 touch "$MAIN_PAGE"
 
-waited=0
-reacted=0
-while [ "$waited" -lt "$RELOAD_TIMEOUT" ]; do
-  if tail -n +"$before" "$LOG" | grep -qiE 'hot reload|hot-reload|rebuild|restarting|file changed|watch'; then
-    reacted=1
-    break
-  fi
-  kill -0 "$DEV_PID" 2>/dev/null || break
-  sleep 2
-  waited=$((waited + 2))
-done
-
-echo "---- session output ----"
-sed -e 's/^/    /' "$LOG" | tail -40
-
-if [ "$reacted" -ne 1 ]; then
-  echo "::warning::the watcher produced no output for a C# edit within ${RELOAD_TIMEOUT}s — known Mac Catalyst limitation, see the comment above"
+if ! wait_for_ready 2 "$RELOAD_TIMEOUT"; then
+  echo "::error::the session did not bring the host back up after a C# edit within ${RELOAD_TIMEOUT}s"
   echo "---- output produced after the edit ----"
-  tail -n +"$before" "$LOG" | sed -e 's/^/    /' | tail -20
-else
-  echo "==> watcher reacted to the C# edit"
+  tail -n +"$before" "$LOG" | sed -e 's/^/    /'
+  exit 1
 fi
 
-echo "==> PASS — dev session starts, serves, and builds under dotnet watch"
+echo "---- session output ----"
+dump_log | tail -40
+
+echo "==> the session rebuilt and relaunched the host after a C# edit"
+echo "==> PASS — dev session starts, serves, launches the app, and survives an edit"

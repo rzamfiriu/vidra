@@ -88,7 +88,7 @@ bash tests/ci/launch-macos-app.sh      dist/MyApp-0.1.0-macos.dmg   # macOS
 ./tests/ci/launch-windows-app.ps1 -Zip dist\MyApp-0.1.0-windows.zip `
   -Cli src\cli\create-vidra-app\dist\cli.js                          # Windows
 
-# Dev loop: `vidra dev` + C# hot reload (macOS)
+# Dev loop: `vidra dev` + the C# reload-on-save loop (macOS)
 bash tests/ci/dev-loop-smoke.sh <app-dir> <path/to/cli.js> macos
 ```
 
@@ -133,12 +133,14 @@ Run them on a development machine for each platform you ship to
 - [ ] Entered app-id flows into `Info.plist` (macOS) / `Package.appxmanifest` (Windows).
 - [ ] `cd demo && npm run dev` brings up Vite + the native host, and the
       webview loads `http://localhost:5173` (or the configured port).
-- [ ] **Windows only today:** editing a C# method body (e.g. `OnTickAsync` in
+- [ ] **Windows:** editing a C# method body (e.g. `OnTickAsync` in
       `MainPage.cs`) hot reloads into the running app and the UI flashes
       "C# reloaded"; a rude edit (e.g. adding a field) rebuilds and relaunches
-      automatically. On macOS the app does not launch under `dotnet watch` at
-      all — use `--no-hot-reload` there and see the tracking issue.
-- [ ] Closing the native window: with C# hot reload active the session stays
+      automatically.
+- [ ] **macOS:** the same edit rebuilds and relaunches the app — the session
+      prints `relaunching…` and then `host ready` again, and no "C# reloaded"
+      badge appears (Mac Catalyst cannot apply deltas, so none is fired).
+- [ ] Closing the native window: with the C# loop active the session stays
       up and prints "save a C# file to relaunch" (save to relaunch, ctrl-c to
       stop); with `--no-hot-reload` it terminates the dev process cleanly.
 - [ ] `vidra build` produces a distributable artifact

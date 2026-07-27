@@ -34,7 +34,11 @@ The bridge is bidirectional — see the message round-trip in
 
 ## Host Model
 
-- **Development**: the WebView loads `http://localhost:5173` (or a configurable `VIDRA_DEV_URL`), allowing Vite HMR and standard browser dev tools. `vidra dev` launches the host under `dotnet watch`, so supported C# edits hot reload into the running process (rude edits rebuild + relaunch automatically); after each applied delta the host pushes a `vidra.hotReloaded` bridge event so the UI can react. On toolchains without `dotnet watch` support for the target, the CLI falls back to a one-shot build + direct launch (`vidra dev --no-hot-reload` forces this).
+- **Development**: the WebView loads `http://localhost:5173` (or a configurable `VIDRA_DEV_URL`), allowing Vite HMR and standard browser dev tools. `vidra dev` runs the host under `dotnet watch`, and what a C# edit does depends on what the platform allows:
+  - **Windows** — `dotnet watch run`: supported edits hot reload into the running process (rude edits rebuild + relaunch automatically), and after each applied delta the host pushes a `vidra.hotReloaded` bridge event so the UI can react.
+  - **macOS (Mac Catalyst)** — `dotnet watch build` plus a launch of the CLI's own: every edit is a rebuild and relaunch, so no `vidra.hotReloaded` event fires. MAUI sets `StartupHookSupport=False` for Catalyst, which rules out in-place edits at the SDK level; `dotnet watch run` additionally never launches the app there, because `dotnet run` for a Catalyst TFM does not produce the `.app` bundle its `RunCommand` points at. Letting the watcher only rebuild, and spawning the built bundle directly (the same path `vidra run` uses), sidesteps both.
+
+  If `dotnet watch` cannot start at all, the CLI falls back to a one-shot build + direct launch (`vidra dev --no-hot-reload` forces this).
 - **Production**: the WebView loads bundled static assets from the app package (`Resources/Raw/wwwroot/index.html`).
 
 The same bridge works in both modes. For JS→C# traffic it prefers a first-class

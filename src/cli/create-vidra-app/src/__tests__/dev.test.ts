@@ -4,6 +4,9 @@ import {
   buildDotnetWatchArgs,
   classifyWatchLine,
   dotnetWatchEnv,
+  watchReaction,
+  watchStrategyFor,
+  type WatchStrategy,
 } from "../commands/dev.js";
 
 describe("buildViteArgs", () => {
@@ -19,44 +22,66 @@ describe("buildViteArgs", () => {
   });
 });
 
+describe("watchStrategyFor", () => {
+  // Mac Catalyst can neither apply deltas (MAUI forces
+  // StartupHookSupport=False) nor be launched by `dotnet watch run` at all, so
+  // the watcher there is used purely as a rebuild trigger.
+  it("drives macOS with rebuild + relaunch", () => {
+    expect(watchStrategyFor("macos")).toBe("rebuild");
+  });
+
+  it("keeps real hot reload on Windows", () => {
+    expect(watchStrategyFor("windows")).toBe("delta");
+  });
+});
+
 describe("buildDotnetWatchArgs", () => {
   const base = {
     csprojPath: "/proj/src/App.Host/App.Host.csproj",
     framework: "net10.0-maccatalyst",
     buildConfig: "Debug",
     verbose: false,
-    targetName: "macos" as const,
+    strategy: "rebuild" as WatchStrategy,
   };
 
-  it("builds a non-interactive watch-run invocation for macOS", () => {
+  it("asks the watcher only to build under the rebuild strategy", () => {
     expect(buildDotnetWatchArgs(base)).toEqual([
+      "watch",
+      "--project",
+      "/proj/src/App.Host/App.Host.csproj",
+      "--non-interactive",
+      "build",
+      "-f",
+      "net10.0-maccatalyst",
+      "-c",
+      "Debug",
+    ]);
+  });
+
+  it("lets the watcher run the app under the delta strategy", () => {
+    expect(
+      buildDotnetWatchArgs({
+        ...base,
+        framework: "net10.0-windows10.0.19041.0",
+        strategy: "delta",
+      }),
+    ).toEqual([
       "watch",
       "--project",
       "/proj/src/App.Host/App.Host.csproj",
       "--non-interactive",
       "run",
       "-f",
-      "net10.0-maccatalyst",
+      "net10.0-windows10.0.19041.0",
       "-c",
       "Debug",
-      "--property:RunWithOpen=false",
     ]);
   });
 
-  it("omits the macOS-only RunWithOpen property on Windows", () => {
-    const args = buildDotnetWatchArgs({
-      ...base,
-      framework: "net10.0-windows10.0.19041.0",
-      targetName: "windows",
-    });
-    expect(args).not.toContain("--property:RunWithOpen=false");
-    expect(args).toContain("net10.0-windows10.0.19041.0");
-  });
-
-  it("places --verbose among the watch options, before the run command", () => {
+  it("places --verbose among the watch options, before the command", () => {
     const args = buildDotnetWatchArgs({ ...base, verbose: true });
     expect(args.indexOf("--verbose")).toBeGreaterThan(-1);
-    expect(args.indexOf("--verbose")).toBeLessThan(args.indexOf("run"));
+    expect(args.indexOf("--verbose")).toBeLessThan(args.indexOf("build"));
   });
 
   it("respects the configured build configuration", () => {
@@ -72,7 +97,16 @@ describe("dotnetWatchEnv", () => {
       DOTNET_WATCH_RESTART_ON_RUDE_EDIT: "1",
       DOTNET_WATCH_SUPPRESS_EMOJIS: "1",
       DOTNET_WATCH_SUPPRESS_LAUNCH_BROWSER: "1",
+      DOTNET_CLI_UI_LANGUAGE: "en",
     });
+  });
+
+  it("pins the child's language, because the session parses its output", () => {
+    // A localized SDK prints "Génération réussie" instead of "Build succeeded",
+    // which would leave the rebuild loop with nothing to trigger on.
+    expect(dotnetWatchEnv("http://localhost:5173").DOTNET_CLI_UI_LANGUAGE).toBe(
+      "en",
+    );
   });
 });
 
@@ -84,14 +118,14 @@ describe("classifyWatchLine", () => {
     "dotnet watch : Started",
     "dotnet watch \u{1F680} Started",
     "dotnet watch : Application started. Press Ctrl+C to shut down.",
-    "dotnet watch \u231A Launched 'MyApp.Host' with process id 4242",
+    "dotnet watch ⌚ Launched 'MyApp.Host' with process id 4242",
   ])("recognizes app start: %s", (line) => {
     expect(classifyWatchLine(line)).toBe("appStarted");
   });
 
   it.each([
     "dotnet watch : Waiting for a file to change before restarting dotnet...",
-    "dotnet watch \u231A Waiting for a file to change before restarting ...",
+    "dotnet watch ⌚ Waiting for a file to change before restarting ...",
   ])("recognizes the idle-after-exit state: %s", (line) => {
     expect(classifyWatchLine(line)).toBe("appWaiting");
   });
@@ -100,6 +134,29 @@ describe("classifyWatchLine", () => {
     expect(
       classifyWatchLine("dotnet watch : Fix the error to continue or press Ctrl+C to exit."),
     ).toBe("buildBlocked");
+  });
+
+  it.each(["Build succeeded.", "    Build succeeded."])(
+    "reads MSBuild's success summary: %s",
+    (line) => {
+      expect(classifyWatchLine(line)).toBe("buildSucceeded");
+    },
+  );
+
+  it.each(["Build FAILED.", "    Build FAILED."])(
+    "reads MSBuild's failure summary: %s",
+    (line) => {
+      expect(classifyWatchLine(line)).toBe("buildFailed");
+    },
+  );
+
+  it.each([
+    // The summary is anchored to the start of the line, so prose that merely
+    // mentions it — an app log, a compiler message — is not the summary.
+    "[MainPage] the build succeeded earlier",
+    "warning: this build failed to embed a resource",
+  ])("does not mistake prose for the build summary: %s", (line) => {
+    expect(classifyWatchLine(line)).toBeNull();
   });
 
   it.each([
@@ -121,5 +178,111 @@ describe("classifyWatchLine", () => {
 
   it("does not treat the app's own 'started' logs as a watch event", () => {
     expect(classifyWatchLine("[MainPage] background job started")).toBeNull();
+  });
+});
+
+describe("watchReaction", () => {
+  const rebuild = (
+    over: Partial<Parameters<typeof watchReaction>[1]> = {},
+  ): Parameters<typeof watchReaction>[1] => ({
+    strategy: "rebuild",
+    hostLaunched: false,
+    buildOutcome: null,
+    everBuilt: false,
+    ...over,
+  });
+  const delta = (
+    over: Partial<Parameters<typeof watchReaction>[1]> = {},
+  ): Parameters<typeof watchReaction>[1] => ({
+    strategy: "delta",
+    hostLaunched: false,
+    buildOutcome: null,
+    everBuilt: false,
+    ...over,
+  });
+
+  describe("rebuild strategy (macOS)", () => {
+    // This is the fix for the bug: nothing else launches the app, so the
+    // successful build has to.
+    it("launches the app on the first successful build", () => {
+      expect(watchReaction("buildSucceeded", rebuild())).toBe("launchHost");
+    });
+
+    it("relaunches on every later successful build", () => {
+      expect(watchReaction("buildSucceeded", rebuild({ hostLaunched: true }))).toBe(
+        "launchHost",
+      );
+    });
+
+    it("reports a failed build as soon as MSBuild says so", () => {
+      expect(watchReaction("buildFailed", rebuild())).toBe("reportBuildFailed");
+    });
+
+    it.each(["appWaiting", "buildBlocked"] as const)(
+      "stays quiet on %s once the cycle's outcome was reported",
+      (event) => {
+        expect(
+          watchReaction(event, rebuild({ buildOutcome: "succeeded", everBuilt: true })),
+        ).toBe("none");
+        expect(
+          watchReaction(event, rebuild({ buildOutcome: "failed", everBuilt: true })),
+        ).toBe("none");
+      },
+    );
+
+    it("speaks up if the watcher goes idle without ever building", () => {
+      expect(watchReaction("appWaiting", rebuild())).toBe("reportEarlyExit");
+    });
+
+    it("does not cry stuck on a quiet cycle once something has built", () => {
+      // watch writes the idle line to stderr and MSBuild the summary to stdout;
+      // a session that has built before is not parked, whatever order they land
+      // in.
+      expect(
+        watchReaction("appWaiting", rebuild({ everBuilt: true })),
+      ).toBe("none");
+    });
+
+    it("marks the host ready when it announces itself", () => {
+      expect(watchReaction("appStarted", rebuild())).toBe("markHostReady");
+    });
+  });
+
+  describe("delta strategy (Windows)", () => {
+    it("marks the host ready on the first start, then stays quiet", () => {
+      expect(watchReaction("appStarted", delta())).toBe("markHostReady");
+      expect(watchReaction("appStarted", delta({ hostLaunched: true }))).toBe(
+        "none",
+      );
+    });
+
+    it("treats an idle line after a launch as the app being gone", () => {
+      expect(watchReaction("appWaiting", delta({ hostLaunched: true }))).toBe(
+        "reportAppIdle",
+      );
+    });
+
+    it("blames the build when it failed before the first launch", () => {
+      expect(watchReaction("appWaiting", delta({ buildOutcome: "failed" }))).toBe(
+        "reportBuildFailed",
+      );
+      expect(
+        watchReaction("buildBlocked", delta({ buildOutcome: "failed" })),
+      ).toBe("reportBuildFailed");
+    });
+
+    it("does not blame the build when the app simply died young", () => {
+      expect(watchReaction("appWaiting", delta())).toBe("reportEarlyExit");
+    });
+
+    it("ignores build summaries — the watcher owns the launch here", () => {
+      expect(watchReaction("buildSucceeded", delta())).toBe("none");
+      expect(watchReaction("buildFailed", delta())).toBe("none");
+    });
+  });
+
+  it("does nothing for unclassified output", () => {
+    expect(watchReaction(null, rebuild())).toBe("none");
+    expect(watchReaction(null, delta())).toBe("none");
   });
 });

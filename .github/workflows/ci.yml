@@ -388,7 +388,7 @@ jobs:
         shell: pwsh
         run: ./tests/ci/windows-selfsigned-cert.ps1
 
-      # ---- Dev-loop smoke: `vidra dev` and C# hot reload ----
+      # ---- Dev-loop smoke: `vidra dev` and the C# dev loop ----
       #
       # Runs before the E2E MainPage is installed, so it exercises the normal
       # template page (the E2E variant exits the process on success, which would
@@ -397,12 +397,15 @@ jobs:
       # macOS only for now: the script tears the session down via POSIX process
       # groups, which git-bash on the Windows runner does not provide. Windows
       # dev-loop coverage needs a PowerShell counterpart.
-      # Blocking again: the assertion is now deterministic (the watch session
-      # builds and arms itself). It no longer requires the app to launch, which
-      # `dotnet watch run` cannot currently do on Mac Catalyst — see the script.
-      - name: Smoke the dev loop (vidra dev + C# hot reload)
+      #
+      # Every check in the script is a hard assertion, including the two that
+      # used to be warnings — the app reaching readiness, and coming back up
+      # after a C# edit. Both were blocked by `dotnet watch run` never launching
+      # a Mac Catalyst app; `vidra dev` no longer asks it to. Two full builds and
+      # launches fit inside the timeout with room to spare.
+      - name: Smoke the dev loop (vidra dev + C# rebuild on save)
         if: runner.os == 'macOS'
-        timeout-minutes: 12
+        timeout-minutes: 15
         shell: bash
         run: |
           bash tests/ci/dev-loop-smoke.sh \
