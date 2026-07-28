@@ -402,9 +402,6 @@ class DevSession {
   private relaunchPending = false;
   private fellBackToClassic = false;
 
-  // Set while the watch child is being replaced on purpose, so its exit reads
-  // as part of the switch rather than as the watcher dying under us.
-  private switchingStrategy = false;
 
   private endSession: () => void = () => {};
   private readonly sessionDone = new Promise<void>((resolve) => {
@@ -596,9 +593,11 @@ class DevSession {
 
     watch.on("exit", (code, signal) => {
       if (this.shuttingDown) return;
-      // We killed it ourselves to restart it in the other mode; switchToRebuild
-      // owns what happens next.
-      if (this.switchingStrategy) return;
+      // A watcher we retired on purpose (see switchToRebuildLoop, which clears
+      // watchChild before killing it). Identity rather than a "switching" flag:
+      // the old process can outlive the wait for it, and a flag cleared by then
+      // would read its exit as the watcher dying under us.
+      if (this.watchChild !== watch) return;
 
       if (this.watchReady) {
         // The app ran at least once; treat like a normal host exit.
@@ -850,12 +849,11 @@ class DevSession {
     console.log();
 
     const previous = this.watchChild;
+    // Cleared first: from here on its exit is expected and ignored.
     this.watchChild = undefined;
     if (previous) {
-      this.switchingStrategy = true;
       killChild(previous, { processGroup: true });
       await waitForExit(previous, HOST_TERMINATION_TIMEOUT_MS);
-      this.switchingStrategy = false;
     }
     if (this.shuttingDown) return;
 
