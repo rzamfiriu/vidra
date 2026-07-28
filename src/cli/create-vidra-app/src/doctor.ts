@@ -210,11 +210,11 @@ const checkMauiWorkload = (workloadList: RunResult | null): Requirement => {
  * difference between them is a property of the platform, not of the machine,
  * so there is nothing here for a user to go and fix.
  *
- * On Windows `dotnet watch` applies deltas to the running process. On macOS it
- * cannot: MAUI sets `StartupHookSupport=False` for Mac Catalyst, which rules
- * out in-place edits at the SDK level, so `vidra dev` rebuilds and relaunches
- * the app on save instead. Say so plainly rather than advertising a loop the
- * platform does not offer.
+ * On Windows `dotnet watch` applies deltas to the running process. On macOS
+ * it cannot today: the Mac Catalyst hot-reload agent's connection drops before
+ * any edit arrives (and older workloads never loaded the agent at all), so
+ * `vidra dev` rebuilds and relaunches the app on save instead. Say so plainly
+ * rather than advertising a loop the toolchain does not deliver.
  */
 const checkCSharpDevLoop = (workloadList: RunResult | null): Requirement => {
   const name = "C# dev loop";

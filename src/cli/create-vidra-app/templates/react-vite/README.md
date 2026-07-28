@@ -41,10 +41,10 @@ under `dotnet watch`. Both sides of the app pick up your edits:
     "C# reloaded" badge. Edits hot reload can't express (new fields, changed
     signatures, …) trigger an automatic rebuild and relaunch.
   - **macOS**: every edit is a rebuild and relaunch — no badge, and the app
-    restarts. Mac Catalyst cannot apply C# edits in place at all (MAUI sets
-    `StartupHookSupport=False` for it), so there is nothing to lose here and
-    `vidra dev` does the honest thing rather than advertising deltas it can't
-    deliver. `npm run doctor` says which loop you get.
+    restarts. The .NET toolchain cannot currently apply C# edits in place on
+    Mac Catalyst (the hot-reload channel is broken there), so `vidra dev` does
+    the honest thing rather than advertising deltas it can't deliver.
+    `npm run doctor` says which loop you get.
 
 To skip `dotnet watch` entirely and do a single build and launch:
 

@@ -23,9 +23,9 @@ describe("buildViteArgs", () => {
 });
 
 describe("watchStrategyFor", () => {
-  // Mac Catalyst can neither apply deltas (MAUI forces
-  // StartupHookSupport=False) nor be launched by `dotnet watch run` at all, so
-  // the watcher there is used purely as a rebuild trigger.
+  // On Mac Catalyst `dotnet watch run` neither launches the app (it execs the
+  // wrong bundle name) nor delivers a delta (the hot-reload agent's connection
+  // drops), so the watcher there is used purely as a rebuild trigger.
   it("drives macOS with rebuild + relaunch", () => {
     expect(watchStrategyFor("macos")).toBe("rebuild");
   });

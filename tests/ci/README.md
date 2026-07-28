@@ -115,10 +115,11 @@ dev` now drives Catalyst with `dotnet watch build` plus a launch of its own, so
 the loop works and the checks gate again.
 
 What is deliberately **not** asserted is *how* an edit lands. On Windows it is a
-hot reload delta; on Mac Catalyst MAUI sets `StartupHookSupport=False`, so it is
-a rebuild and relaunch. Both are correct outcomes, and pinning either would make
-the test lie on the other platform — what both owe us is a running app
-afterwards, which is what the second readiness check requires.
+hot reload delta; on Mac Catalyst the toolchain's delta channel is broken (the
+agent's connection drops before the first edit), so it is a rebuild and
+relaunch. Both are correct outcomes, and pinning either would make the test lie
+on the other platform — what both owe us is a running app afterwards, which is
+what the second readiness check requires.
 
 It runs before the E2E MainPage is installed, since that variant exits the
 process on success and would end the session immediately. **macOS only:** the
