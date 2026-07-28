@@ -668,7 +668,7 @@ class DevSession {
 
     switch (reaction) {
       case "markHostReady":
-        this.announceHostLaunched();
+        this.announceHostLaunched(line.includes(HOST_READY_SENTINEL));
         return;
 
       case "launchHost":
@@ -747,14 +747,25 @@ class DevSession {
     );
   }
 
-  private announceHostLaunched(): void {
+  /**
+   * The app the watcher launched is up. Says "host ready" when the app told us
+   * so itself (the VidraPage sentinel) and "launched" when all we have is the
+   * watcher's own start message, which only means a process was spawned. Both
+   * paths through the session — this one and {@link onHostReady} — report
+   * readiness in the same words, so "the app is up" is one thing to look for
+   * rather than two.
+   */
+  private announceHostLaunched(sawSentinel: boolean): void {
     if (this.watchReady) return;
     this.watchReady = true;
+    const loop = dim(`\u00b7 ${this.csharpLoopSuffix}`);
     console.log(
       taggedRow(
         "done",
         "host",
-        `${dim("launched")} ${value(this.project.projectName)} ${dim(`— ${this.csharpLoopLabel}`)}`,
+        sawSentinel
+          ? `${dim("host ready \u2014")} ${value(this.project.projectName)} ${loop}`
+          : `${dim("launched")} ${value(this.project.projectName)} ${dim(`\u2014 ${this.csharpLoopLabel}`)}`,
       ),
     );
   }
