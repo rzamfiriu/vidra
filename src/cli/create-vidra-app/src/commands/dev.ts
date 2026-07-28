@@ -128,21 +128,27 @@ const startSession = async (
  *   edits to the *running* process. This is the real thing, and it works on
  *   Windows.
  * - `"rebuild"` — `dotnet watch build` plus a launch of our own. Used for Mac
- *   Catalyst, where `"delta"` is impossible *and* broken:
- *     1. MAUI sets `StartupHookSupport=False` for Catalyst, so `dotnet watch`
- *        can never apply a delta there — it degrades to restart-on-change, the
- *        exact loop we run ourselves;
- *     2. `dotnet watch run` never launches the app at all, because `dotnet run`
- *        for a Catalyst TFM does not produce the `.app` bundle that MSBuild's
- *        `RunCommand` points at ("An error occurred trying to start process
- *        '.../maccatalyst-arm64//App.app/Contents/MacOS/App' ... No such file
- *        or directory"), leaving the session parked forever.
+ *   Catalyst, where `"delta"` is broken twice over (both verified on
+ *   macos-latest, workload sets 10.0.300 and 10.0.302):
+ *     1. `dotnet watch run` never launches the app: the Catalyst run target
+ *        execs `$(AssemblyName).app` while the build names the bundle
+ *        `$(_AppBundleName).app` (from `ApplicationTitle`) — same directory,
+ *        different name, so the exec fails with "No such file or directory"
+ *        and the session parks forever. For a scaffolded app the two names
+ *        never coincide ("VidraSmoke.Host" vs "Vidra Smoke").
+ *     2. Even launched (bundle renamed by hand), no delta ever lands. On
+ *        pre-2026-02 workloads the embedding host ignored
+ *        `DOTNET_STARTUP_HOOKS` outright (dotnet/macios#24664), so the agent
+ *        never loaded; on current ones the agent loads and negotiates full
+ *        capabilities, then its WebSocket drops before the first edit and
+ *        every update fails "No active WebSocket connection" — while watch
+ *        still prints "changes applied".
  *   So the watcher is asked only to do what it does reliably — notice edits and
  *   rebuild — and the app is started by the same build-then-spawn path that
  *   already works for `vidra run` and `vidra dev --no-hot-reload`.
  *
- * Revisit if MAUI ever enables startup hooks for Mac Catalyst; the only thing
- * that would need to change is this mapping.
+ * Revisit when the agent connection survives on Catalyst; the only thing that
+ * would need to change is this mapping.
  */
 export type WatchStrategy = "delta" | "rebuild";
 

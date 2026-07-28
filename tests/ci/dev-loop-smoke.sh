@@ -10,18 +10,20 @@
 # classification, but nothing ever started a real session.
 #
 # Everything here is a hard assertion. It did not used to be: on Mac Catalyst
-# `dotnet watch run` never launched the app (`dotnet run` does not produce the
-# .app bundle its RunCommand points at), so the session parked forever and the
-# two most valuable checks — the app reaching readiness, and reacting to an
-# edit — could only be reported as warnings. `vidra dev` now drives Catalyst
-# with `dotnet watch build` plus a launch of its own, which is a loop that
-# works, so the checks gate again.
+# `dotnet watch run` never launched the app — the run target execs
+# $(AssemblyName).app while the bundle is built as $(_AppBundleName).app, a
+# name that never matches for a scaffolded app — so the session parked forever
+# and the two most valuable checks — the app reaching readiness, and reacting
+# to an edit — could only be reported as warnings. `vidra dev` now drives
+# Catalyst with `dotnet watch build` plus a launch of its own, which is a loop
+# that works, so the checks gate again.
 #
 # What is deliberately NOT asserted is *how* the edit lands. On Windows it is a
-# hot reload delta; on Mac Catalyst MAUI sets StartupHookSupport=False, so it is
-# a rebuild and relaunch. Both are correct, and pinning one would make the test
-# lie on the other platform. What both owe us is a running app afterwards, and
-# that is what we check.
+# hot reload delta; on Mac Catalyst the delta channel is broken end to end
+# (measured: the hot-reload agent's WebSocket drops before the first edit and
+# updates fail), so it is a rebuild and relaunch. Both are correct, and pinning
+# one would make the test lie on the other platform. What both owe us is a
+# running app afterwards, and that is what we check.
 #
 # Everything is time-bounded and the session is always torn down, because a
 # hanging dev server is exactly the failure this must not cause.
