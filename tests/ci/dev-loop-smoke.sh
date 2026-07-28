@@ -114,7 +114,10 @@ if [ -z "$MAIN_PAGE" ]; then
 fi
 
 echo "==> editing $MAIN_PAGE"
-before="$(wc -l < "$LOG")"
+# `wc -l` pads its output with spaces on macOS, and `tail -n +"  42"` fails
+# with "illegal offset" — which would silently blank the diagnostic exactly
+# when it is needed.
+before="$(wc -l < "$LOG" | tr -d '[:space:]')"
 printf '\n// touched by dev-loop-smoke at build time\n' >> "$MAIN_PAGE"
 touch "$MAIN_PAGE"
 
