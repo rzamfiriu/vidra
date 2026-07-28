@@ -186,6 +186,14 @@ export interface DotnetWatchArgsOptions {
 /**
  * Arguments for the `dotnet watch` process. Under `"delta"` the watcher runs
  * the app; under `"rebuild"` it only builds it (see {@link WatchStrategy}).
+ *
+ * `RunWithOpen=false` is load-bearing on Mac Catalyst. Left at its default the
+ * run target hands the bundle to `open(1)`, which returns immediately and
+ * leaves the app parented to launchd: `dotnet run` exits 0 straight away, the
+ * watcher concludes the app is gone, and nothing the app prints — including the
+ * readiness sentinel this session waits for — is ever connected to anything.
+ * With it, the bundle's executable is spawned as a child, which is what makes
+ * both the sentinel and the hot reload agent's lifetime observable.
  */
 export const buildDotnetWatchArgs = (
   opts: DotnetWatchArgsOptions,
@@ -202,6 +210,9 @@ export const buildDotnetWatchArgs = (
   opts.framework,
   "-c",
   opts.buildConfig,
+  ...(opts.strategy === "delta" && opts.framework.includes("maccatalyst")
+    ? ["--property:RunWithOpen=false"]
+    : []),
 ];
 
 /** Extra environment for the `dotnet watch` process (inherited by the app). */

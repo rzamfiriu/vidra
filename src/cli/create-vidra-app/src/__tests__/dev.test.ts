@@ -58,6 +58,30 @@ describe("buildDotnetWatchArgs", () => {
     ]);
   });
 
+  it("spawns the Catalyst app as a child instead of handing it to open(1)", () => {
+    // Without this the run target calls `open`, which returns immediately: the
+    // app detaches to launchd, `dotnet run` exits 0, and the session never sees
+    // the readiness sentinel the app prints.
+    expect(
+      buildDotnetWatchArgs({
+        ...base,
+        framework: "net10.0-maccatalyst",
+        strategy: "delta",
+      }),
+    ).toContain("--property:RunWithOpen=false");
+  });
+
+  it.each([
+    { framework: "net10.0-windows10.0.19041.0", strategy: "delta" as WatchStrategy },
+    { framework: "net10.0-maccatalyst", strategy: "rebuild" as WatchStrategy },
+  ])("leaves RunWithOpen alone for %o", (opts) => {
+    // Windows has no such property, and under "rebuild" the watcher never runs
+    // the app at all.
+    expect(buildDotnetWatchArgs({ ...base, ...opts })).not.toContain(
+      "--property:RunWithOpen=false",
+    );
+  });
+
   it("lets the watcher run the app under the delta strategy", () => {
     expect(
       buildDotnetWatchArgs({
