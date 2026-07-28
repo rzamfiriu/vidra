@@ -250,27 +250,20 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      # Pin xcode-select to the newest Xcode actually present on the
-      # runner image. As of this writing the macos-latest image tops out
-      # at Xcode 26.3, while the maui workload's MacCatalyst reference
-      # assemblies require the SDK shipped with Xcode 26.4 (MT0180). We
-      # therefore can't satisfy the workload's check at the SDK level;
-      # the host csproj disables the MacCatalyst linker for Debug builds
-      # via <MtouchLink>None</MtouchLink>, which skips the linker Setup
-      # step where MT0180 is raised. Selecting the newest available Xcode
-      # here is still worth doing so the rest of the toolchain (Info.plist
-      # validation, signing, etc.) targets the most recent SDK present.
-      - name: Select newest available Xcode (macOS)
-        if: runner.os == 'macOS'
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: "26.3"
-
+      # No xcode-select pin. There used to be one at 26.3, from when that was
+      # the newest Xcode on the image and the Catalyst reference assemblies
+      # already wanted a newer SDK than any Xcode present (MT0180) — pinning at
+      # least kept the rest of the toolchain on the best available. The image
+      # has moved on and the pin inverted: it held the runner at 26.3 while the
+      # current Catalyst pack requires the 26.5 SDK from Xcode 26.6, so the
+      # linker failed the build the pin was meant to protect. The image default
+      # satisfies the pack; log what we got rather than choosing for it.
       - name: Log Xcode version (macOS)
         if: runner.os == 'macOS'
         run: |
           xcode-select -p
           xcodebuild -version
+          ls -d /Applications/Xcode*.app 2>/dev/null || true
 
       # ---- Fast bridge echo-ping (no MAUI workload needed) ----
       - name: Build Vidra.Bridge.Smoke harness
