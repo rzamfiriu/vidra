@@ -137,9 +137,12 @@ Run them on a development machine for each platform you ship to
       `MainPage.cs`) hot reloads into the running app and the UI flashes
       "C# reloaded"; a rude edit (e.g. adding a field) rebuilds and relaunches
       automatically.
-- [ ] **macOS:** the same edit rebuilds and relaunches the app — the session
-      prints `relaunching…` and then `host ready` again, and no "C# reloaded"
-      badge appears (Mac Catalyst cannot apply deltas, so none is fired).
+- [ ] **macOS:** the same edit reaches the running app. Either outcome is
+      correct: the delta applies in place (as on Windows), or — if the
+      hot-reload agent has dropped out — the session says so, prints
+      `switching this session to rebuild + relaunch on save…`, and the edit
+      arrives with the next `host ready`. No "C# reloaded" badge in the second
+      case, since no delta was applied.
 - [ ] Closing the native window: with the C# loop active the session stays
       up and prints "save a C# file to relaunch" (save to relaunch, ctrl-c to
       stop); with `--no-hot-reload` it terminates the dev process cleanly.

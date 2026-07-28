@@ -287,18 +287,18 @@ jobs:
 
       # ---- Template build smoke (requires MAUI workload) ----
       #
-      # `--skip-manifest-update` is load-bearing on macOS today: without it,
-      # `dotnet workload install` pulls the newest maccatalyst manifest from
-      # NuGet, which currently requires the SDK shipped with Xcode 26.4. The
-      # macos-latest runner image only has up to Xcode 26.3 installed, so the
-      # next build would fail in ILLink's Setup step with MT0180. Sticking to
-      # the manifest version bundled with the installed .NET SDK pins us to a
-      # workload that's coherent with what's actually on the runner. This is
-      # safe on Windows too (the maui-windows manifest doesn't track Xcode),
-      # so we apply it uniformly.
+      # The manifest is deliberately NOT pinned. `--skip-manifest-update` used to
+      # be here because the newest maccatalyst manifest wanted the SDK from
+      # Xcode 26.4 while macos-latest topped out at 26.3 (MT0180 in ILLink's
+      # Setup step); the image now ships 26.6, so the reason is gone — and the
+      # pin had become actively harmful. It held the Catalyst SDK pack at
+      # 26.0.11017, where `dotnet run` execs `$(AssemblyName).app` while the
+      # build produces `$(_AppBundleName).app` (dotnet/macios#26318, fixed in
+      # 26.2.10233+). CI was therefore the only place the app could not launch
+      # under `dotnet watch`, which is precisely what this job exists to prove.
       - name: Install MAUI workload (${{ matrix.maui-workload }})
         shell: bash
-        run: dotnet workload install ${{ matrix.maui-workload }} --skip-manifest-update
+        run: dotnet workload install ${{ matrix.maui-workload }}
 
       - name: Log installed workloads
         shell: bash
@@ -403,7 +403,7 @@ jobs:
       # after a C# edit. Both were blocked by `dotnet watch run` never launching
       # a Mac Catalyst app; `vidra dev` no longer asks it to. Two full builds and
       # launches fit inside the timeout with room to spare.
-      - name: Smoke the dev loop (vidra dev + C# rebuild on save)
+      - name: Smoke the dev loop (vidra dev + a C# edit reaching the app)
         if: runner.os == 'macOS'
         timeout-minutes: 15
         shell: bash

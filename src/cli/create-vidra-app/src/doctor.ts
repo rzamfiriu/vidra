@@ -1,4 +1,6 @@
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
 import prompts from "prompts";
 import { dim, fixLine, footer, lime, row, value } from "./theme.js";
 import type { GlyphName } from "./theme.js";
@@ -216,6 +218,100 @@ const checkMauiWorkload = (workloadList: RunResult | null): Requirement => {
  * `vidra dev` rebuilds and relaunches the app on save instead. Say so plainly
  * rather than advertising a loop the toolchain does not deliver.
  */
+// --- Mac Catalyst SDK pack ---------------------------------------------------
+//
+// The Catalyst pack decides whether `dotnet watch run` can launch the app at
+// all. Packs before 26.2.10233 compute the run path from `$(AssemblyName).app`
+// while the build names the bundle `$(_AppBundleName).app` (i.e. from
+// `ApplicationTitle`), so for any app whose title differs from its assembly
+// name — every scaffolded Vidra app — the launch fails with "No such file or
+// directory" and the watch session parks forever. Fixed upstream in
+// dotnet/macios#26318; verified by reading the shipped targets of each pack:
+// broken in 26.0.11017, 26.1.10502 and 26.2.10191, fixed in 26.2.10233,
+// 26.4.10259 and 26.5.10301.
+//
+// `dotnet workload list` cannot answer this: with `--skip-manifest-update` the
+// workload set version advances while the Catalyst manifest stays behind, so
+// the pack on disk is the only honest source.
+const FIRST_FIXED_MACCATALYST_PACK = [26, 2, 10233];
+
+const MACCATALYST_PACK_DIR = /^Microsoft\.MacCatalyst\.Sdk\.net\d+\.\d+_\d+\.\d+$/;
+
+const compareVersions = (a: readonly number[], b: readonly number[]): number => {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const diff = (a[i] ?? 0) - (b[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+};
+
+const versionSegments = (version: string): number[] | null => {
+  const segments = version.split(".").map((s) => Number.parseInt(s, 10));
+  return segments.length && !segments.some(Number.isNaN) ? segments : null;
+};
+
+/** The newest of a list of pack version directory names, or undefined. */
+export const newestPackVersion = (versions: string[]): string | undefined => {
+  let best: { raw: string; segments: number[] } | undefined;
+  for (const raw of versions) {
+    const segments = versionSegments(raw);
+    if (!segments) continue;
+    if (!best || compareVersions(segments, best.segments) > 0) {
+      best = { raw, segments };
+    }
+  }
+  return best?.raw;
+};
+
+/**
+ * True when this Catalyst pack still computes the run path from the assembly
+ * name, i.e. `dotnet watch run` cannot launch a scaffolded app. Unparseable
+ * versions read as fine: the check is advisory and a false alarm is worse than
+ * a missed one.
+ */
+export const macCatalystPackIsStale = (version: string): boolean => {
+  const segments = versionSegments(version);
+  return segments
+    ? compareVersions(segments, FIRST_FIXED_MACCATALYST_PACK) < 0
+    : false;
+};
+
+/** Where the SDK keeps its packs, derived from `dotnet --list-sdks`. */
+const dotnetPacksDir = (): string | undefined => {
+  if (process.env.DOTNET_ROOT) {
+    return path.join(process.env.DOTNET_ROOT, "packs");
+  }
+  const res = run(DOTNET, ["--list-sdks"]);
+  if (!res.found) return undefined;
+  // "10.0.302 [/usr/local/share/dotnet/sdk]" — the sdk dir's parent is the root.
+  const sdkDir = res.stdout.trim().split("\n").pop()?.match(/\[(.+)\]\s*$/)?.[1];
+  return sdkDir ? path.join(path.dirname(sdkDir), "packs") : undefined;
+};
+
+/** Newest Mac Catalyst SDK pack installed, or undefined if none/unreadable. */
+export const installedMacCatalystPackVersion = (): string | undefined => {
+  const packs = dotnetPacksDir();
+  if (!packs) return undefined;
+  try {
+    const versions = fs
+      .readdirSync(packs, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && MACCATALYST_PACK_DIR.test(e.name))
+      .flatMap((e) => {
+        try {
+          return fs
+            .readdirSync(path.join(packs, e.name), { withFileTypes: true })
+            .filter((v) => v.isDirectory())
+            .map((v) => v.name);
+        } catch {
+          return [];
+        }
+      });
+    return newestPackVersion(versions);
+  } catch {
+    return undefined;
+  }
+};
+
 const checkCSharpDevLoop = (workloadList: RunResult | null): Requirement => {
   const name = "C# dev loop";
   if (!workloadList) {
@@ -228,12 +324,20 @@ const checkCSharpDevLoop = (workloadList: RunResult | null): Requirement => {
       detail: "dotnet watch applies C# edits to the running app",
     };
   }
-  const version = workloadSetVersion(workloadList.stdout);
-  const workloadNote = version ? ` (workload set ${version})` : "";
+  const pack = installedMacCatalystPackVersion();
+  if (pack && macCatalystPackIsStale(pack)) {
+    return {
+      name,
+      status: "unknown",
+      detail: `Mac Catalyst pack ${pack} cannot launch the app under dotnet watch \u2014 vidra dev falls back to a classic launch (fixed in 26.2.10233+)`,
+      fix: "dotnet workload update",
+    };
+  }
+  const packNote = pack ? ` (Mac Catalyst pack ${pack})` : "";
   return {
     name,
     status: "ok",
-    detail: `rebuild + relaunch on save${workloadNote} \u2014 Mac Catalyst cannot apply C# edits in place`,
+    detail: `dotnet watch applies C# edits to the running app${packNote} \u2014 vidra dev rebuilds and relaunches if the agent drops mid-session`,
   };
 };
 

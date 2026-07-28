@@ -48,9 +48,10 @@ npm run dev
 ```
 
 `npm run dev` (which runs `vidra dev`) starts Vite and the native host for your current
-OS together, with Vite HMR and a C# loop: supported edits hot reload into the running app
-on Windows, and rebuild + relaunch it on macOS, where Mac Catalyst cannot apply C# edits
-in place.
+OS together, with Vite HMR and a C# loop: supported edits hot reload into the running app.
+On macOS the Mac Catalyst hot-reload agent sometimes drops out mid-session
+([dotnet/sdk#55488](https://github.com/dotnet/sdk/issues/55488)); when it does, `vidra dev`
+says so and keeps the loop working by rebuilding and relaunching on save.
 
 ### Prerequisites
 

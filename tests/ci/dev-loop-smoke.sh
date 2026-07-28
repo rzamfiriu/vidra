@@ -14,16 +14,17 @@
 # $(AssemblyName).app while the bundle is built as $(_AppBundleName).app, a
 # name that never matches for a scaffolded app — so the session parked forever
 # and the two most valuable checks — the app reaching readiness, and reacting
-# to an edit — could only be reported as warnings. `vidra dev` now drives
-# Catalyst with `dotnet watch build` plus a launch of its own, which is a loop
-# that works, so the checks gate again.
+# to an edit — could only be reported as warnings. That was a stale Catalyst
+# SDK pack (dotnet/macios#26318, fixed in 26.2.10233+), not a platform limit,
+# so the checks gate again.
 #
-# What is deliberately NOT asserted is *how* the edit lands. On Windows it is a
-# hot reload delta; on Mac Catalyst the delta channel is broken end to end
-# (measured: the hot-reload agent's WebSocket drops before the first edit and
-# updates fail), so it is a rebuild and relaunch. Both are correct, and pinning
-# one would make the test lie on the other platform. What both owe us is a
-# running app afterwards, and that is what we check.
+# What is deliberately NOT asserted is *how* the edit lands. The edit injects a
+# line the running app prints, so the assertion is that the app prints it —
+# which is true whether `dotnet watch` applied a delta to the live process or
+# `vidra dev` rebuilt and relaunched after the hot-reload agent dropped out
+# (dotnet/sdk#55488, which on Catalyst hits about half of sessions). Both are
+# correct outcomes; requiring one would make this test lie on the other. Which
+# one happened is reported, not gated.
 #
 # Everything is time-bounded and the session is always torn down, because a
 # hanging dev server is exactly the failure this must not cause.
@@ -107,24 +108,45 @@ grep -q "vite ready" "$LOG" \
   || { echo "::error::Vite never reported ready"; dump_log; exit 1; }
 echo "==> vite ready"
 
-# Touch a method body and require the session to put a running app back up.
-# Whether that happens by delta or by relaunch is the platform's business.
+# Inject a line into a method the app runs every few seconds, then require the
+# running app to print it. A comment-only edit would prove nothing here: under
+# the delta loop it produces no runtime effect at all, so the session would look
+# identical whether the edit had been applied or silently swallowed.
 MAIN_PAGE="$(find src -name 'MainPage.cs' -print -quit)"
 if [ -z "$MAIN_PAGE" ]; then
   echo "::error::could not find MainPage.cs to edit"
   exit 1
 fi
 
+EDIT_MARKER="[smoke] edit applied"
+
 echo "==> editing $MAIN_PAGE"
 # `wc -l` pads its output with spaces on macOS, and `tail -n +"  42"` fails
 # with "illegal offset" — which would silently blank the diagnostic exactly
 # when it is needed.
 before="$(wc -l < "$LOG" | tr -d '[:space:]')"
-printf '\n// touched by dev-loop-smoke at build time\n' >> "$MAIN_PAGE"
+ready_before="$(grep -c "$READY_LINE" "$LOG" | tr -d '[:space:]')"
+perl -0pi -e 's/(private async Task OnTickAsync\([^)]*\)\s*\n?\s*\{)/$1\n        System.Console.WriteLine("[smoke] edit applied");/' "$MAIN_PAGE"
+grep -qF "$EDIT_MARKER" "$MAIN_PAGE" || {
+  echo "::error::the edit did not apply to $MAIN_PAGE — has OnTickAsync been renamed?"
+  exit 1
+}
 touch "$MAIN_PAGE"
 
-if ! wait_for_ready 2 "$RELOAD_TIMEOUT"; then
-  echo "::error::the session did not bring the host back up after a C# edit within ${RELOAD_TIMEOUT}s"
+waited=0
+while [ "$waited" -lt "$RELOAD_TIMEOUT" ]; do
+  if tail -n +"$before" "$LOG" | grep -qF "$EDIT_MARKER"; then break; fi
+  if ! kill -0 "$DEV_PID" 2>/dev/null; then
+    echo "::error::vidra dev exited while waiting for the edit to take effect"
+    dump_log
+    exit 1
+  fi
+  sleep 3
+  waited=$((waited + 3))
+done
+
+if ! tail -n +"$before" "$LOG" | grep -qF "$EDIT_MARKER"; then
+  echo "::error::the edit never reached the running app within ${RELOAD_TIMEOUT}s"
   echo "---- output produced after the edit ----"
   tail -n +"$before" "$LOG" | sed -e 's/^/    /'
   exit 1
@@ -133,5 +155,10 @@ fi
 echo "---- session output ----"
 dump_log | tail -40
 
-echo "==> the session rebuilt and relaunched the host after a C# edit"
-echo "==> PASS — dev session starts, serves, launches the app, and survives an edit"
+ready_after="$(grep -c "$READY_LINE" "$LOG" | tr -d '[:space:]')"
+if [ "$ready_after" -gt "$ready_before" ]; then
+  echo "==> the edit reached the app after a rebuild + relaunch (~${waited}s)"
+else
+  echo "==> the edit reached the running app in place, no relaunch (~${waited}s)"
+fi
+echo "==> PASS — dev session starts, serves, launches the app, and an edit reaches it"

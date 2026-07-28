@@ -104,22 +104,25 @@ classification, but nothing ever started a real session.
 Everything in it is a hard assertion, all time-bounded: `vidra dev` starts, Vite
 reports ready, the host project builds under `dotnet watch`, the app reports
 itself ready (the CLI prints `host ready` only after the host process emits the
-`[vidra] host ready` sentinel from `VidraPage`), and a C# edit is followed by the
-app being ready again.
+`[vidra] host ready` sentinel from `VidraPage`), and a C# edit reaches the
+running app.
 
 That last pair used to be reported as warnings rather than asserted, because on
-Mac Catalyst `dotnet watch run` never launched the app — `dotnet run` does not
-produce the `.app` bundle its `RunCommand` points at — so the session parked in
-"Waiting for a file to change before restarting" and reacted to nothing. `vidra
-dev` now drives Catalyst with `dotnet watch build` plus a launch of its own, so
-the loop works and the checks gate again.
+Mac Catalyst `dotnet watch run` never launched the app: the Catalyst run target
+exec'd `$(AssemblyName).app` while the build names the bundle
+`$(_AppBundleName).app`, so the session parked in "Waiting for a file to change
+before restarting" and reacted to nothing. That was a stale SDK pack
+(dotnet/macios#26318, fixed in 26.2.10233+) which CI held itself on by
+installing workloads with `--skip-manifest-update`; the pin is gone and the
+checks gate again.
 
-What is deliberately **not** asserted is *how* an edit lands. On Windows it is a
-hot reload delta; on Mac Catalyst the toolchain's delta channel is broken (the
-agent's connection drops before the first edit), so it is a rebuild and
-relaunch. Both are correct outcomes, and pinning either would make the test lie
-on the other platform — what both owe us is a running app afterwards, which is
-what the second readiness check requires.
+The edit is not a comment — it injects a line the app prints from a method it
+runs every few seconds, and the assertion is that the line appears in the
+session output. *How* it got there is deliberately **not** asserted: the delta
+may apply to the live process, or the hot-reload agent may have dropped out
+(dotnet/sdk#55488) and the session rebuilt and relaunched instead. Both are
+correct, and requiring one would make the test lie whenever the toolchain chose
+the other. Which happened is printed, not gated.
 
 It runs before the E2E MainPage is installed, since that variant exits the
 process on success and would end the session immediately. **macOS only:** the

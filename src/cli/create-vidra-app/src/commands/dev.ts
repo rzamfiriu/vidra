@@ -121,39 +121,59 @@ const startSession = async (
 // --- dotnet watch helpers (exported for unit tests) ---------------------------
 
 /**
- * How the C#-side dev loop is driven, per target:
+ * How the C#-side dev loop is driven:
  *
  * - `"delta"` — `dotnet watch run`. The watcher owns the launch, because only
  *   then can it inject the hot reload agent (`DOTNET_STARTUP_HOOKS`) and apply
- *   edits to the *running* process. This is the real thing, and it works on
- *   Windows.
- * - `"rebuild"` — `dotnet watch build` plus a launch of our own. Used for Mac
- *   Catalyst, where `"delta"` is broken twice over (both verified on
- *   macos-latest, workload sets 10.0.300 and 10.0.302):
- *     1. `dotnet watch run` never launches the app: the Catalyst run target
- *        execs `$(AssemblyName).app` while the build names the bundle
- *        `$(_AppBundleName).app` (from `ApplicationTitle`) — same directory,
- *        different name, so the exec fails with "No such file or directory"
- *        and the session parks forever. For a scaffolded app the two names
- *        never coincide ("VidraSmoke.Host" vs "Vidra Smoke").
- *     2. Even launched (bundle renamed by hand), no delta ever lands. On
- *        pre-2026-02 workloads the embedding host ignored
- *        `DOTNET_STARTUP_HOOKS` outright (dotnet/macios#24664), so the agent
- *        never loaded; on current ones the agent loads and negotiates full
- *        capabilities, then its WebSocket drops before the first edit and
- *        every update fails "No active WebSocket connection" — while watch
- *        still prints "changes applied".
- *   So the watcher is asked only to do what it does reliably — notice edits and
- *   rebuild — and the app is started by the same build-then-spawn path that
- *   already works for `vidra run` and `vidra dev --no-hot-reload`.
+ *   edits to the *running* process. This is the real thing, and every session
+ *   starts here.
+ * - `"rebuild"` — `dotnet watch build` plus a launch of our own, reusing the
+ *   build-then-spawn path behind `vidra run` and `vidra dev --no-hot-reload`.
+ *   Not a platform choice: it is where a session *lands* when the delta channel
+ *   dies under it (see {@link DELTA_CHANNEL_DEAD_WARNING}).
  *
- * Revisit when the agent connection survives on Catalyst; the only thing that
- * would need to change is this mapping.
+ * Mac Catalyst needs the fallback because its delta channel is unreliable
+ * rather than absent. Measured on `macos-latest`, workload set 10.0.302
+ * (Catalyst pack 26.5.10301), four `dotnet watch run` sessions, two SDKs, with
+ * and without a wiped `bin`/`obj`:
+ *
+ * | SDK      | build state       | agent socket after 30s idle | first edit  |
+ * |----------|-------------------|-----------------------------|-------------|
+ * | 10.0.301 | fresh scaffold    | connected                   | delta lands |
+ * | 10.0.301 | wiped + rebuilt   | dropped                     | nothing     |
+ * | 10.0.302 | fresh scaffold    | dropped                     | nothing     |
+ * | 10.0.302 | wiped + rebuilt   | connected                   | delta lands |
+ *
+ * So deltas do work on Catalyst today — about half the time. The failure is the
+ * agent's WebSocket dropping while the session sits idle, before any edit
+ * (dotnet/sdk#55488); it tracks neither the SDK nor the freshness of the build
+ * output. When it happens every update fails and `dotnet watch` still prints
+ * "changes applied", so a session that silently applies nothing is exactly as
+ * quiet as a working one — which is what makes detecting it worth the code.
+ *
+ * (The other half of this on Catalyst, `dotnet watch run` never launching the
+ * app at all, was a stale-manifest bug — dotnet/macios#26318, fixed from
+ * Catalyst pack 26.2 onwards. `vidra doctor` reports a toolchain still on the
+ * broken packs rather than this code working around it.)
  */
 export type WatchStrategy = "delta" | "rebuild";
 
-export const watchStrategyFor = (targetName: DevTargetName): WatchStrategy =>
-  targetName === "macos" ? "rebuild" : "delta";
+/**
+ * The initial strategy. Always `"delta"`: a session only moves to `"rebuild"`
+ * by observing its own delta channel die, never by predicting that it will.
+ */
+export const watchStrategyFor = (_targetName: DevTargetName): WatchStrategy =>
+  "delta";
+
+/**
+ * `dotnet watch` gives up on a process with this line, after an update batch
+ * fails. It is a `LogWarning` in the SDK, so unlike the transport's own
+ * diagnostics it prints at default verbosity — the session never has to run the
+ * watcher in `--verbose` to see it. Matching English text is safe because
+ * {@link dotnetWatchEnv} pins `DOTNET_CLI_UI_LANGUAGE=en`.
+ */
+export const DELTA_CHANNEL_DEAD_WARNING =
+  "further changes won't be applied to this process";
 
 export interface DotnetWatchArgsOptions {
   csprojPath: string;
@@ -212,6 +232,7 @@ export type WatchLineEvent =
   | "buildBlocked"
   | "buildSucceeded"
   | "buildFailed"
+  | "deltaChannelDead"
   | null;
 
 /**
@@ -235,6 +256,10 @@ export type WatchLineEvent =
  *   fixed. Before the first launch this can mean an environment problem
  *   (wrong Xcode, missing workload) rather than a code error, so the session
  *   prints targeted hints.
+ * - `deltaChannelDead` — the hot reload agent is gone and `dotnet watch` has
+ *   stopped trying to reach it, so every later edit would be swallowed while
+ *   the watcher keeps printing "changes applied". The session reacts by
+ *   switching to the rebuild loop (see {@link WatchStrategy}).
  * - `buildSucceeded` / `buildFailed` — MSBuild's own end-of-build summary.
  *   These are the outcome of one watch cycle, and under the `"rebuild"`
  *   strategy they are what drives the loop: a succeeded build is the cue to
@@ -246,6 +271,9 @@ export type WatchLineEvent =
 export const HOST_READY_SENTINEL = "[vidra] host ready";
 
 export const classifyWatchLine = (line: string): WatchLineEvent => {
+  if (line.toLowerCase().includes(DELTA_CHANNEL_DEAD_WARNING)) {
+    return "deltaChannelDead";
+  }
   if (/waiting for a file to change/i.test(line)) return "appWaiting";
   if (/fix the error to continue/i.test(line)) return "buildBlocked";
   if (line.includes(HOST_READY_SENTINEL)) return "appStarted";
@@ -264,6 +292,7 @@ export const classifyWatchLine = (line: string): WatchLineEvent => {
 export type WatchReaction =
   | "markHostReady"
   | "launchHost"
+  | "switchToRebuild"
   | "reportBuildFailed"
   | "reportAppIdle"
   | "reportEarlyExit"
@@ -297,6 +326,13 @@ export const watchReaction = (
 ): WatchReaction => {
   if (event === "appStarted") {
     return ctx.hostLaunched ? "none" : "markHostReady";
+  }
+
+  // Only meaningful while the watcher owns the app: under "rebuild" nothing is
+  // asking it to apply deltas, so a stale warning from the session it replaced
+  // must not send us round the loop again.
+  if (event === "deltaChannelDead") {
+    return ctx.strategy === "delta" ? "switchToRebuild" : "none";
   }
 
   if (ctx.strategy === "rebuild") {
@@ -334,7 +370,9 @@ class DevSession {
   private readonly buildConfig = process.env.VIDRA_BUILD_CONFIG || "Debug";
   private readonly vite: boolean;
   private readonly hotReload: boolean;
-  private readonly strategy: WatchStrategy;
+  // Not readonly: a session that watches its delta channel die moves itself to
+  // the rebuild loop (see WatchStrategy).
+  private strategy: WatchStrategy;
   private shuttingDown = false;
 
   // Watch-mode state: `watchChild` is the `dotnet watch` process (a process
@@ -352,6 +390,10 @@ class DevSession {
   private relaunching = false;
   private relaunchPending = false;
   private fellBackToClassic = false;
+
+  // Set while the watch child is being replaced on purpose, so its exit reads
+  // as part of the switch rather than as the watcher dying under us.
+  private switchingStrategy = false;
 
   private endSession: () => void = () => {};
   private readonly sessionDone = new Promise<void>((resolve) => {
@@ -543,6 +585,9 @@ class DevSession {
 
     watch.on("exit", (code, signal) => {
       if (this.shuttingDown) return;
+      // We killed it ourselves to restart it in the other mode; switchToRebuild
+      // owns what happens next.
+      if (this.switchingStrategy) return;
 
       if (this.watchReady) {
         // The app ran at least once; treat like a normal host exit.
@@ -619,6 +664,10 @@ class DevSession {
         // Under "rebuild" the watcher has just produced a fresh build and will
         // not run it — that part is ours to do (see WatchStrategy).
         void this.launchOrRelaunchHost();
+        return;
+
+      case "switchToRebuild":
+        void this.switchToRebuildLoop();
         return;
 
       case "reportAppIdle":
@@ -735,6 +784,64 @@ class DevSession {
     } finally {
       this.relaunching = false;
     }
+  }
+
+  /**
+   * The hot reload agent is gone and `dotnet watch` has stopped trying to reach
+   * it. Every later edit would be applied to nothing while the watcher keeps
+   * reporting success, so the session stops asking for deltas and drives the
+   * loop itself: the watcher is restarted as `dotnet watch build`, and each
+   * successful build relaunches the app.
+   *
+   * Restarting the watcher also takes the app down with it (it leads the
+   * process group), which is what makes the first rebuild land on a clean
+   * process instead of one whose agent has already given up.
+   */
+  private async switchToRebuildLoop(): Promise<void> {
+    if (this.shuttingDown || this.strategy !== "delta") return;
+    this.strategy = "rebuild";
+
+    console.log();
+    console.log(
+      taggedRow(
+        "manual",
+        "host",
+        dim(
+          "the hot reload agent dropped out — dotnet watch would keep reporting edits as applied",
+        ),
+      ),
+    );
+    console.log(
+      taggedRow(
+        "active",
+        "host",
+        dim("switching this session to rebuild + relaunch on save…"),
+      ),
+    );
+    console.log(
+      footer(
+        dim(
+          "a known Mac Catalyst flake (dotnet/sdk#55488) — restarting vidra dev often gets deltas back",
+        ),
+      ),
+    );
+    console.log();
+
+    const previous = this.watchChild;
+    this.watchChild = undefined;
+    if (previous) {
+      this.switchingStrategy = true;
+      killChild(previous, { processGroup: true });
+      await waitForExit(previous, HOST_TERMINATION_TIMEOUT_MS);
+      this.switchingStrategy = false;
+    }
+    if (this.shuttingDown) return;
+
+    // The next cycle is a build, not a run: its outcome is what launches the
+    // app, so start from a clean slate rather than the dead session's verdict.
+    this.buildOutcome = null;
+    this.everBuilt = false;
+    this.launchHostWithWatch();
   }
 
   /**

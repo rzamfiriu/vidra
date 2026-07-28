@@ -23,16 +23,16 @@ describe("buildViteArgs", () => {
 });
 
 describe("watchStrategyFor", () => {
-  // On Mac Catalyst `dotnet watch run` neither launches the app (it execs the
-  // wrong bundle name) nor delivers a delta (the hot-reload agent's connection
-  // drops), so the watcher there is used purely as a rebuild trigger.
-  it("drives macOS with rebuild + relaunch", () => {
-    expect(watchStrategyFor("macos")).toBe("rebuild");
-  });
-
-  it("keeps real hot reload on Windows", () => {
-    expect(watchStrategyFor("windows")).toBe("delta");
-  });
+  // Deltas do work on Mac Catalyst — in about half of sessions; the other half
+  // lose the hot-reload agent's WebSocket while idle (dotnet/sdk#55488). That
+  // is not predictable from the platform, so every session asks for the real
+  // thing and downgrades only on evidence.
+  it.each(["macos", "windows"] as const)(
+    "starts %s sessions on the delta loop",
+    (target) => {
+      expect(watchStrategyFor(target)).toBe("delta");
+    },
+  );
 });
 
 describe("buildDotnetWatchArgs", () => {
@@ -111,6 +111,24 @@ describe("dotnetWatchEnv", () => {
 });
 
 describe("classifyWatchLine", () => {
+  it.each([
+    "dotnet watch \u{1F525} [App (net10.0-maccatalyst)] Further changes won't be applied to this process.",
+    "dotnet watch : Further changes won't be applied to this process.",
+  ])("recognizes the dead delta channel: %s", (line) => {
+    expect(classifyWatchLine(line)).toBe("deltaChannelDead");
+  });
+
+  it("does not mistake the debug-level variant for it", () => {
+    // "Previous changes failed to apply. Further changes are not applied to
+    // this process." is LogDebug, i.e. invisible at the verbosity vidra dev
+    // runs the watcher at — matching it would be matching nothing.
+    expect(
+      classifyWatchLine(
+        "dotnet watch : Previous changes failed to apply. Further changes are not applied to this process.",
+      ),
+    ).not.toBe("deltaChannelDead");
+  });
+
   it.each([
     // The VidraPage sentinel — the version-stable signal (e.g. the .NET
     // 10.0.2xx watcher prints no "Started" message of its own).
@@ -278,6 +296,21 @@ describe("watchReaction", () => {
     it("ignores build summaries — the watcher owns the launch here", () => {
       expect(watchReaction("buildSucceeded", delta())).toBe("none");
       expect(watchReaction("buildFailed", delta())).toBe("none");
+    });
+  });
+
+  describe("the delta channel dying", () => {
+    it("moves a delta session to the rebuild loop", () => {
+      expect(watchReaction("deltaChannelDead", delta())).toBe("switchToRebuild");
+      expect(
+        watchReaction("deltaChannelDead", delta({ hostLaunched: true })),
+      ).toBe("switchToRebuild");
+    });
+
+    it("is inert once the session is already rebuilding", () => {
+      // The warning outlives the watcher that printed it; reacting again would
+      // restart the loop we just switched to.
+      expect(watchReaction("deltaChannelDead", rebuild())).toBe("none");
     });
   });
 

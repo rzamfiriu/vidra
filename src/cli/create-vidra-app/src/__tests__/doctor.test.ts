@@ -7,6 +7,8 @@ import {
   looksLikeMissingXcode,
   looksLikeXcodeTooOld,
   workloadSetVersion,
+  macCatalystPackIsStale,
+  newestPackVersion,
 } from "../doctor.js";
 
 describe("hasNet10Sdk", () => {
@@ -151,5 +153,50 @@ describe("looksLikeXcodeTooOld", () => {
         "error NETSDK1147: the following workloads must be installed: maui-maccatalyst",
       ),
     ).toBe(false);
+  });
+});
+
+describe("macCatalystPackIsStale", () => {
+  // The boundary was established by reading the run target out of each shipped
+  // pack: packs below 26.2.10233 exec `$(AssemblyName).app`, which for a
+  // scaffolded app is never the bundle the build produced.
+  it.each(["26.0.11017", "26.1.10502", "26.2.10191"])(
+    "flags %s, whose dotnet watch run cannot launch the app",
+    (version) => {
+      expect(macCatalystPackIsStale(version)).toBe(true);
+    },
+  );
+
+  it.each(["26.2.10233", "26.4.10259", "26.5.10301", "27.0.1"])(
+    "accepts %s",
+    (version) => {
+      expect(macCatalystPackIsStale(version)).toBe(false);
+    },
+  );
+
+  it("says nothing about a version it cannot parse", () => {
+    // Advisory check: a false alarm telling people to update a working
+    // toolchain is worse than staying quiet.
+    expect(macCatalystPackIsStale("preview")).toBe(false);
+    expect(macCatalystPackIsStale("")).toBe(false);
+  });
+});
+
+describe("newestPackVersion", () => {
+  it("compares numerically, not as text", () => {
+    // "26.2.9999" sorts after "26.2.10233" as a string, and is older.
+    expect(newestPackVersion(["26.2.9999", "26.2.10233"])).toBe("26.2.10233");
+  });
+
+  it("picks the newest across pack families", () => {
+    expect(newestPackVersion(["26.0.11017", "26.5.10301", "26.1.10502"])).toBe(
+      "26.5.10301",
+    );
+  });
+
+  it("skips entries that are not versions, and empties out", () => {
+    expect(newestPackVersion(["not-a-version", "26.4.10259"])).toBe("26.4.10259");
+    expect(newestPackVersion([])).toBeUndefined();
+    expect(newestPackVersion(["nonsense"])).toBeUndefined();
   });
 });
