@@ -34,6 +34,16 @@ const port = Number(args.port ?? 8099);
 const signingKey = args["signing-key"] ?? null;
 const feed = path.join(work, "feed");
 
+// How long a local static server gets to start listening.
+//
+// This was 40 attempts of 250ms, which is a budget of ten seconds when the probe
+// fails fast and fifty when it does not, depending on whether the OS refuses the
+// connection or lets it hang. On a cold Windows runner ten seconds is not enough
+// and the suite fails on a server that was about to come up, which is a red
+// release gate for no defect. A deadline says what the budget actually is.
+const READY_TIMEOUT_MS = 60_000;
+const READY_POLL_MS = 250;
+
 const MARKER = "ota-bundle-1-3-0";
 let failures = 0;
 let server;
@@ -278,6 +288,20 @@ function readManifest() {
   return JSON.parse(fs.readFileSync(path.join(feed, "bundles.json"), "utf8"));
 }
 
+/** Polls until `probe` returns true, or gives up after READY_TIMEOUT_MS. */
+async function waitUntil(probe) {
+  const deadline = Date.now() + READY_TIMEOUT_MS;
+  do {
+    try {
+      if (await probe()) return true;
+    } catch {
+      // Not up yet.
+    }
+    await new Promise((resolve) => setTimeout(resolve, READY_POLL_MS));
+  } while (Date.now() < deadline);
+  return false;
+}
+
 /**
  * Blocks until the port is listening, whatever it answers.
  *
@@ -287,36 +311,33 @@ function readManifest() {
  */
 async function waitForServer() {
   const url = `http://127.0.0.1:${port}/`;
-  for (let attempt = 0; attempt < 40; attempt++) {
-    try {
-      await fetch(url, { signal: AbortSignal.timeout(1000) });
-      console.log(`==> feed server is listening on ${port}`);
-      return;
-    } catch {
-      // Not up yet.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
+  const up = await waitUntil(async () => {
+    await fetch(url, { signal: AbortSignal.timeout(1000) });
+    return true;
+  });
+  if (!up) {
+    throw new Error(
+      `the feed server never came up on ${port} within ${READY_TIMEOUT_MS / 1000}s`,
+    );
   }
-  throw new Error(`the feed server never came up on ${port}`);
+  console.log(`==> feed server is listening on ${port}`);
 }
 
 /** Blocks until the published index is actually being served, so launch 1 is not a race. */
 async function waitForFeed() {
   const url = `http://127.0.0.1:${port}/bundles.json`;
-  for (let attempt = 0; attempt < 40; attempt++) {
-    try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(1000) });
-      if (response.ok) {
-        await response.text();
-        console.log(`==> feed is answering at ${url}`);
-        return;
-      }
-    } catch {
-      // Not up yet.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 250));
+  const answering = await waitUntil(async () => {
+    const response = await fetch(url, { signal: AbortSignal.timeout(1000) });
+    if (!response.ok) return false;
+    await response.text();
+    return true;
+  });
+  if (!answering) {
+    throw new Error(
+      `the feed never answered at ${url} within ${READY_TIMEOUT_MS / 1000}s`,
+    );
   }
-  throw new Error(`the feed never answered at ${url}`);
+  console.log(`==> feed is answering at ${url}`);
 }
 
 function serveFeed() {
