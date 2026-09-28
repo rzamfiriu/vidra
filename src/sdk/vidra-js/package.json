@@ -1,6 +1,6 @@
 {
   "name": "@vidra-dev/sdk",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Framework-agnostic TypeScript SDK for Vidra bridge (JS \u2194 .NET MAUI)",
   "type": "module",
   "main": "dist/index.js",

@@ -1,6 +1,6 @@
 {
   "name": "vidra-cli",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "The vidra command: dev, build, updates and doctor for Vidra apps (React + .NET MAUI)",
   "type": "module",
   "bin": {
