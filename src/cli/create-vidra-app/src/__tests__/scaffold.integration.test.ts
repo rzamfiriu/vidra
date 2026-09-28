@@ -195,6 +195,14 @@ describe("scaffold integration", () => {
     expect(app).toContain("vidra.capabilities()");
   });
 
+  it("leaves the generated native token name available to bridge tutorials", async () => {
+    const config = await fs.readFile(path.join(root, "vidra.config.ts"), "utf8");
+
+    expect(config).toContain("native as builtInNative");
+    expect(config).toContain("events as builtInEvents");
+    expect(config).not.toMatch(/\bnative\s*(?:,|\})/);
+  });
+
   it.skipIf(!SHOULD_RUN_DOTNET)(
     "dotnet restore succeeds on the host project",
     () => {

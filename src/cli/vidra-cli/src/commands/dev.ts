@@ -148,17 +148,12 @@ const startSession = async (
           next.accessFingerprint,
         );
         if (policyWrite.changed) {
+          await session.restartHostForBridgePolicyChange();
+        } else if (frontendWrite.changed) {
           console.log(row({
             glyph: "done",
-            detail: dim(
-              "vidra.config.ts updated — dotnet watch is rebuilding and relaunching the host",
-            ),
+            detail: dim("vidra.config.ts updated — refreshing frontend access fingerprint"),
           }));
-        } else if (frontendWrite.changed) {
-            console.log(row({
-              glyph: "done",
-              detail: dim("vidra.config.ts updated — refreshing frontend access fingerprint"),
-            }));
         }
       } catch (error) {
         console.error(row({
@@ -436,6 +431,7 @@ interface SessionOptions {
 
 class DevSession {
   private readonly children: ChildProcess[] = [];
+  private readonly watchChildren = new Set<ChildProcess>();
   private readonly buildConfig = process.env.VIDRA_BUILD_CONFIG || "Debug";
   private readonly vite: boolean;
   private readonly hotReload: boolean;
@@ -458,8 +454,9 @@ class DevSession {
   private hostChild: ChildProcess | undefined;
   private relaunching = false;
   private relaunchPending = false;
+  private restartingWatch = false;
+  private watchRestartPending = false;
   private fellBackToClassic = false;
-
 
   private endSession: () => void = () => {};
   private readonly sessionDone = new Promise<void>((resolve) => {
@@ -640,6 +637,7 @@ class DevSession {
 
     this.watchChild = watch;
     this.children.push(watch);
+    this.watchChildren.add(watch);
     // The readiness sentinel is translated into a friendlier status line by
     // onWatchLine, so keep the raw marker out of the passthrough output.
     const notSentinel = (line: string): boolean =>
@@ -650,6 +648,8 @@ class DevSession {
     scanStream(watch.stderr, (line) => this.onWatchLine(line));
 
     watch.on("exit", (code, signal) => {
+      this.forgetChild(watch);
+      this.watchChildren.delete(watch);
       if (this.shuttingDown) return;
       // A watcher we retired on purpose (see switchToRebuildLoop, which clears
       // watchChild before killing it). Identity rather than a "switching" flag:
@@ -659,6 +659,9 @@ class DevSession {
 
       if (this.watchReady) {
         // The app ran at least once; treat like a normal host exit.
+        // The watcher was the process-group leader; ensure an app that outlived
+        // it cannot become an orphan before the session exits.
+        killChild(watch, { processGroup: true, signal: "SIGKILL" });
         const failed = (code !== null && code !== 0) || signal !== null;
         if (failed) {
           console.error(
@@ -693,6 +696,65 @@ class DevSession {
     });
 
     return watch;
+  }
+
+  /**
+   * A bridge policy is a bundled native resource, not managed code, so
+   * `dotnet watch` notices the file but cannot apply it as a metadata delta.
+   * Replace the watcher it owns: the new watch session performs a real build,
+   * embeds the policy, launches the host, and retains the current delta or
+   * rebuild strategy for later C# edits.
+   */
+  async restartHostForBridgePolicyChange(): Promise<void> {
+    if (this.shuttingDown) return;
+    if (!this.hotReload || this.fellBackToClassic) {
+      console.log(
+        taggedRow(
+          "manual",
+          "host",
+          dim("vidra.config.ts updated — restart the host to apply bridge access"),
+        ),
+      );
+      return;
+    }
+    // The only window without a current watcher is while another lifecycle
+    // transition is already replacing it. That replacement's initial build
+    // reads the policy written immediately before this call.
+    if (!this.watchChild) return;
+
+    if (this.restartingWatch) {
+      this.watchRestartPending = true;
+      return;
+    }
+    this.restartingWatch = true;
+
+    try {
+      do {
+        this.watchRestartPending = false;
+        console.log(
+          taggedRow(
+            "active",
+            "host",
+            dim("vidra.config.ts updated — rebuilding and relaunching the host…"),
+          ),
+        );
+
+        const previous = this.watchChild;
+        this.watchChild = undefined;
+        this.watchReady = false;
+        this.buildOutcome = null;
+        this.everBuilt = false;
+
+        if (previous) {
+          await terminateChild(previous, { processGroup: true });
+        }
+        if (this.shuttingDown) return;
+
+        this.launchHostWithWatch();
+      } while (this.watchRestartPending && !this.shuttingDown);
+    } finally {
+      this.restartingWatch = false;
+    }
   }
 
   private onWatchLine(line: string): void {
@@ -849,8 +911,7 @@ class DevSession {
         if (previous) {
           this.hostChild = undefined;
           console.log(taggedRow("active", "host", dim("relaunching…")));
-          killChild(previous);
-          await waitForExit(previous, HOST_TERMINATION_TIMEOUT_MS);
+          await terminateChild(previous);
         }
         if (this.shuttingDown) return;
 
@@ -910,8 +971,7 @@ class DevSession {
     // Cleared first: from here on its exit is expected and ignored.
     this.watchChild = undefined;
     if (previous) {
-      killChild(previous, { processGroup: true });
-      await waitForExit(previous, HOST_TERMINATION_TIMEOUT_MS);
+      await terminateChild(previous, { processGroup: true });
     }
     if (this.shuttingDown) return;
 
@@ -1234,12 +1294,16 @@ class DevSession {
     this.shuttingDown = true;
 
     // Iterate a copy: an exiting child removes itself from `children`.
-    for (const child of [...this.children]) {
-      killChild(child, { processGroup: child === this.watchChild });
-    }
-
-    this.endSession();
-    process.exit(exitCode);
+    const watchChildren = new Set(this.watchChildren);
+    const children = [...this.children];
+    void Promise.all(
+      children.map((child) =>
+        terminateChild(child, { processGroup: watchChildren.has(child) }),
+      ),
+    ).finally(() => {
+      this.endSession();
+      process.exit(exitCode);
+    });
   }
 }
 
@@ -1415,33 +1479,33 @@ const findFileRecursive = (
   return null;
 };
 
-/**
- * Resolves when `child` has exited, or after `timeoutMs` \u2014 in which case it is
- * SIGKILLed, because the caller's next step is to start a replacement.
- */
-const waitForExit = (child: ChildProcess, timeoutMs: number): Promise<void> =>
+/** Resolves when `child` exits, or false when the timeout elapses. */
+const waitForExit = (
+  child: ChildProcess,
+  timeoutMs: number,
+): Promise<boolean> =>
   new Promise((resolve) => {
     if (child.exitCode !== null || child.signalCode !== null) {
-      resolve();
+      resolve(true);
       return;
     }
     const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      resolve();
+      resolve(false);
     }, timeoutMs);
     child.once("exit", () => {
       clearTimeout(timer);
-      resolve();
+      resolve(true);
     });
   });
 
 const killChild = (
   child: ChildProcess,
-  opts: { processGroup?: boolean } = {},
+  opts: { processGroup?: boolean; signal?: NodeJS.Signals } = {},
 ): void => {
-  if (!child.pid || child.exitCode !== null) return;
+  if (!child.pid) return;
 
   if (process.platform === "win32") {
+    if (child.exitCode !== null) return;
     try {
       execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
         stdio: "ignore",
@@ -1456,14 +1520,34 @@ const killChild = (
   // its grandchildren (the app `dotnet watch` launched) terminate with it.
   if (opts.processGroup) {
     try {
-      process.kill(-child.pid, "SIGTERM");
+      process.kill(-child.pid, opts.signal ?? "SIGTERM");
       return;
     } catch {
       // Group already gone — fall through to a plain kill.
     }
   }
 
-  child.kill("SIGTERM");
+  if (child.exitCode === null) child.kill(opts.signal ?? "SIGTERM");
+};
+
+/**
+ * Stops a supervised process and waits for it before its replacement starts or
+ * the CLI exits. If a watcher leader exits before its app, the final group
+ * SIGKILL still reaches that grandchild because the process-group id survives
+ * its leader.
+ */
+const terminateChild = async (
+  child: ChildProcess,
+  opts: { processGroup?: boolean } = {},
+): Promise<void> => {
+  killChild(child, opts);
+  const exited = await waitForExit(child, HOST_TERMINATION_TIMEOUT_MS);
+  if (!exited || opts.processGroup) {
+    killChild(child, { ...opts, signal: "SIGKILL" });
+  }
+  if (!exited) {
+    await waitForExit(child, 1_000);
+  }
 };
 
 const printMacLaunchHint = (): void => {

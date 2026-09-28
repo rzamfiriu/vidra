@@ -161,4 +161,66 @@ if [ "$ready_after" -gt "$ready_before" ]; then
 else
   echo "==> the edit reached the running app in place, no relaunch (~${waited}s)"
 fi
-echo "==> PASS — dev session starts, serves, launches the app, and an edit reaches it"
+
+# A bridge policy is a native bundle resource rather than managed code.
+# `dotnet watch` otherwise reports "No managed code changes to apply" and leaves
+# the old policy running while Vite loads the new fingerprint. The CLI must
+# deliberately replace its watch session and bring up a host with the new
+# policy.
+CONFIG="$APP_DIR/vidra.config.ts"
+policy_ready_before="$(ready_count)"
+echo "==> editing $CONFIG"
+perl -0pi -e 's/^\s*builtInNative\.appWindow\.center,\n//m' "$CONFIG"
+if grep -qF "builtInNative.appWindow.center," "$CONFIG"; then
+  echo "::error::the bridge policy edit did not apply"
+  exit 1
+fi
+
+waited=0
+while [ "$waited" -lt "$RELOAD_TIMEOUT" ]; do
+  [ "$(ready_count)" -gt "$policy_ready_before" ] && break
+  if ! kill -0 "$DEV_PID" 2>/dev/null; then
+    echo "::error::vidra dev exited while applying the bridge policy"
+    dump_log
+    exit 1
+  fi
+  sleep 3
+  waited=$((waited + 3))
+done
+
+if [ "$(ready_count)" -le "$policy_ready_before" ]; then
+  echo "::error::the host was not relaunched after the bridge policy changed"
+  dump_log
+  exit 1
+fi
+grep -q "vidra.config.ts updated — rebuilding and relaunching the host" "$LOG" \
+  || { echo "::error::the CLI did not report the bridge policy relaunch"; dump_log; exit 1; }
+echo "==> bridge policy rebuilt into a relaunched host (~${waited}s)"
+
+# Ctrl-C must not return while the detached dotnet-watch process group is still
+# alive. Capture its leader before shutdown so this checks the exact process
+# the CLI owned rather than relying on a broad process-name search.
+WATCH_PID="$(pgrep -P "$DEV_PID" -f 'dotnet watch' | head -1 || true)"
+[ -n "$WATCH_PID" ] \
+  || { echo "::error::could not identify the supervised dotnet watch process"; dump_log; exit 1; }
+
+echo "==> stopping vidra dev with SIGINT"
+kill -INT "$DEV_PID"
+waited=0
+while kill -0 "$DEV_PID" 2>/dev/null && [ "$waited" -lt 15 ]; do
+  sleep 1
+  waited=$((waited + 1))
+done
+if kill -0 "$DEV_PID" 2>/dev/null; then
+  echo "::error::vidra dev did not exit after SIGINT"
+  exit 1
+fi
+if kill -0 "$WATCH_PID" 2>/dev/null; then
+  echo "::error::dotnet watch was orphaned after vidra dev exited"
+  ps -p "$WATCH_PID" -o pid=,ppid=,stat=,command=
+  exit 1
+fi
+DEV_PID=""
+echo "==> Ctrl-C reaped dotnet watch (~${waited}s)"
+
+echo "==> PASS — dev session starts, reloads code and policy, and shuts down cleanly"
