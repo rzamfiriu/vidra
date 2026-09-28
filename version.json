@@ -1,4 +1,4 @@
 {
   "$comment": "Single source of truth for the version of everything Vidra publishes: both npm packages and every NuGet package. Change it with `node scripts/version.mjs set <semver>`, never by hand — the derived files are checked in and CI fails on drift.",
-  "version": "0.5.0"
+  "version": "0.5.1"
 }
