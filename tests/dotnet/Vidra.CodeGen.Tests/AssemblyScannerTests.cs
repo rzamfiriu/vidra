@@ -1,6 +1,8 @@
 using Vidra.CodeGen;
 using Vidra.CodeGen.TestFixtures;
 using Vidra.Bridge;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 
 namespace Vidra.CodeGen.Tests;
 
@@ -146,5 +148,76 @@ public sealed class AssemblyScannerTests
             .Should().Be(manifest.CanonicalManifest);
         BridgeContractRegistry.Fingerprint(BridgeManifestScope.App)
             .Should().Be(manifest.Fingerprint);
+    }
+
+    [Fact]
+    public void Scan_Skips_Unresolvable_Attributes_On_Unrelated_Types()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"vidra-codegen-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+
+        try
+        {
+            var missingDependency = Path.Combine(directory, "Missing.Dependency.dll");
+            EmitAssembly(
+                missingDependency,
+                """
+                public sealed class MissingMarkerAttribute : System.Attribute { }
+                """);
+
+            var fixture = Path.Combine(directory, "AndroidShapedApp.dll");
+            EmitAssembly(
+                fixture,
+                """
+                using Vidra.Bridge;
+
+                [MissingMarker]
+                public sealed class UnrelatedPlatformType { }
+
+                [BridgeModule("surviving")]
+                public sealed class SurvivingModule : BridgeModuleBase
+                {
+                    [BridgeMethod("ping")]
+                    public string Ping() => "pong";
+                }
+                """,
+                missingDependency,
+                typeof(BridgeModuleAttribute).Assembly.Location);
+
+            File.Copy(
+                typeof(BridgeModuleAttribute).Assembly.Location,
+                Path.Combine(directory, "Vidra.Bridge.dll"));
+            File.Delete(missingDependency);
+
+            using (var scanner = new AssemblyScanner([fixture]))
+            {
+                var manifest = scanner.Scan([fixture]);
+                manifest.Contracts.Should().ContainKey("surviving");
+            }
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    private static void EmitAssembly(
+        string output,
+        string source,
+        params string[] extraReferences)
+    {
+        var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
+            .Split(Path.PathSeparator)
+            .Select(path => MetadataReference.CreateFromFile(path))
+            .Concat(extraReferences.Select(path => MetadataReference.CreateFromFile(path)));
+        var compilation = CSharpCompilation.Create(
+            Path.GetFileNameWithoutExtension(output),
+            [CSharpSyntaxTree.ParseText(source)],
+            references,
+            new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var result = compilation.Emit(output);
+        result.Success.Should().BeTrue(
+            string.Join(Environment.NewLine, result.Diagnostics));
     }
 }

@@ -57,7 +57,7 @@ if (scope is not ("core" or "app"))
 }
 
 // Scan assemblies
-var scanner = new AssemblyScanner(assemblies.ToArray());
+using var scanner = new AssemblyScanner(assemblies.ToArray());
 var manifest = scanner.Scan(assemblies.ToArray());
 
 Console.WriteLine($"Found {manifest.Contracts.Count} contract(s):");
