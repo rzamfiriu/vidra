@@ -9,6 +9,7 @@ if (args.Length < 1 || args[0] != "generate")
 }
 
 var assemblies = new List<string>();
+var probes = new List<string>();
 string outputDir = ".";
 string sdkImport = "@vidra-dev/sdk";
 string scope = "app";
@@ -23,6 +24,15 @@ for (var i = 1; i < args.Length; i++)
             while (i < args.Length && !args[i].StartsWith('-'))
             {
                 assemblies.Add(args[i]);
+                i++;
+            }
+            i--;
+            break;
+        case "--probe":
+            i++;
+            while (i < args.Length && !args[i].StartsWith('-'))
+            {
+                probes.Add(args[i]);
                 i++;
             }
             i--;
@@ -57,7 +67,7 @@ if (scope is not ("core" or "app"))
 }
 
 // Scan assemblies
-using var scanner = new AssemblyScanner(assemblies.ToArray());
+using var scanner = new AssemblyScanner(assemblies.ToArray(), probes);
 var manifest = scanner.Scan(assemblies.ToArray());
 
 Console.WriteLine($"Found {manifest.Contracts.Count} contract(s):");

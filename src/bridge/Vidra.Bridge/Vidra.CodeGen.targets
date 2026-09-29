@@ -54,9 +54,15 @@
   <Target Name="_VidraCodeGenArguments">
     <ItemGroup>
       <VidraCodeGenAssembly Condition="'@(VidraCodeGenAssembly)' == ''" Include="$(TargetPath)" />
+      <!--
+        Android (and other MAUI) builds do not copy package references next to
+        the app assembly. Codegen still has to resolve Vidra.Bridge to read
+        contract attributes, so hand it the directories the compiler referenced.
+      -->
+      <_VidraCodeGenProbe Include="@(ReferencePath->'%(RootDir)%(Directory)')" />
     </ItemGroup>
     <PropertyGroup>
-      <_VidraCodeGenArgs>generate --assembly @(VidraCodeGenAssembly->'&quot;%(Identity)&quot;', ' ') --output &quot;$(VidraTsOutputDir)&quot; --sdk-import &quot;$(VidraSdkImport)&quot; --scope &quot;$(VidraContractScope)&quot;</_VidraCodeGenArgs>
+      <_VidraCodeGenArgs>generate --assembly @(VidraCodeGenAssembly->'&quot;%(Identity)&quot;', ' ') @(_VidraCodeGenProbe->'--probe &quot;%(Identity)&quot;', ' ') --output &quot;$(VidraTsOutputDir)&quot; --sdk-import &quot;$(VidraSdkImport)&quot; --scope &quot;$(VidraContractScope)&quot;</_VidraCodeGenArgs>
     </PropertyGroup>
   </Target>
 
@@ -72,7 +78,7 @@
   -->
   <Target Name="VidraCodeGen"
           AfterTargets="Build"
-          DependsOnTargets="_VidraCodeGenArguments"
+          DependsOnTargets="ResolveAssemblyReferences;_VidraCodeGenArguments"
           Condition="'$(VidraGenerateTs)' == 'true' AND '$(TargetFramework)' != '' AND '$(VidraTsOutputDir)' != '' AND ('@(VidraCodeGenAssembly)' != '' OR Exists('$(TargetPath)'))">
 
     <Message Importance="high" Text="[Vidra] Generating TypeScript proxies from @(VidraCodeGenAssembly->'%(Filename)', ', ')..." />
@@ -86,7 +92,7 @@
   </Target>
 
   <Target Name="VidraCodeGenCheck"
-          DependsOnTargets="_VidraCodeGenArguments"
+          DependsOnTargets="ResolveAssemblyReferences;_VidraCodeGenArguments"
           Condition="'$(VidraGenerateTs)' == 'true' AND '$(TargetFramework)' != '' AND '$(VidraTsOutputDir)' != '' AND ('@(VidraCodeGenAssembly)' != '' OR Exists('$(TargetPath)'))">
     <Exec Command="$(VidraCodeGenCommand) $(_VidraCodeGenArgs) --check"
           WorkingDirectory="$(MSBuildProjectDirectory)"

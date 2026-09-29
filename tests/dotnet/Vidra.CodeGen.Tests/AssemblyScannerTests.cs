@@ -201,6 +201,46 @@ public sealed class AssemblyScannerTests
         }
     }
 
+    [Fact]
+    public void Scan_Resolves_Bridge_From_Probe_Directory_When_It_Is_Not_Beside_The_Assembly()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"vidra-codegen-{Guid.NewGuid():N}");
+        var appDir = Path.Combine(directory, "app");
+        var probeDir = Path.Combine(directory, "probe");
+        Directory.CreateDirectory(appDir);
+        Directory.CreateDirectory(probeDir);
+
+        try
+        {
+            var bridge = typeof(BridgeModuleAttribute).Assembly.Location;
+            var fixture = Path.Combine(appDir, "AndroidShapedApp.dll");
+            EmitAssembly(
+                fixture,
+                """
+                using Vidra.Bridge;
+
+                [JsContract("counter")]
+                public interface ICounterJs
+                {
+                    [JsMethod("increment")]
+                    System.Threading.Tasks.Task<int> IncrementAsync();
+                }
+                """,
+                bridge);
+            File.Copy(bridge, Path.Combine(probeDir, "Vidra.Bridge.dll"));
+
+            using var scanner = new AssemblyScanner([fixture], [probeDir]);
+            var manifest = scanner.Scan([fixture]);
+
+            manifest.Contracts.Should().ContainKey("counter");
+            manifest.Contracts["counter"].JsMethods.Should().ContainKey("increment");
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static void EmitAssembly(
         string output,
         string source,

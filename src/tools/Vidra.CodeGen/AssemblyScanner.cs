@@ -11,20 +11,30 @@ public sealed class AssemblyScanner : IDisposable
 {
     private readonly MetadataLoadContext _mlc;
 
-    public AssemblyScanner(string[] assemblyPaths)
+    /// <param name="probePaths">
+    /// Files or directories to search when an assembly is not sitting beside
+    /// the one being scanned. MAUI Android builds leave package references in
+    /// the NuGet cache rather than copying them next to the app DLL, so the
+    /// build passes those reference directories here.
+    /// </param>
+    public AssemblyScanner(string[] assemblyPaths, IEnumerable<string>? probePaths = null)
     {
         // Collect all .dll files from the directories of input assemblies
         // so that transitive references (like Vidra.Bridge) are resolvable.
         var dirs = assemblyPaths
             .Select(p => Path.GetDirectoryName(Path.GetFullPath(p))!)
             .Distinct();
-        var siblingDlls = dirs.SelectMany(d => Directory.GetFiles(d, "*.dll"));
+        var siblingDlls = dirs.SelectMany(d => Directory.Exists(d) ? Directory.GetFiles(d, "*.dll") : []);
 
         // Deduplicate by filename: runtime assemblies take priority over
         // platform-specific copies to avoid MetadataLoadContext conflicts.
+        // Probe paths come next — they are the references the compiler used,
+        // which on Android are not copied beside the app assembly.
         var byName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var path in GetRuntimeAssemblies())
             byName[Path.GetFileName(path)] = path;
+        foreach (var path in EnumerateProbeAssemblies(probePaths))
+            byName.TryAdd(Path.GetFileName(path), path);
         foreach (var path in siblingDlls)
             byName.TryAdd(Path.GetFileName(path), path);
         foreach (var path in assemblyPaths)
@@ -488,6 +498,29 @@ public sealed class AssemblyScanner : IDisposable
     {
         var runtimeDir = Path.GetDirectoryName(typeof(object).Assembly.Location)!;
         return Directory.GetFiles(runtimeDir, "*.dll");
+    }
+
+    private static IEnumerable<string> EnumerateProbeAssemblies(IEnumerable<string>? probePaths)
+    {
+        if (probePaths is null)
+            yield break;
+
+        foreach (var probe in probePaths)
+        {
+            if (string.IsNullOrWhiteSpace(probe))
+                continue;
+
+            var full = Path.GetFullPath(probe);
+            if (Directory.Exists(full))
+            {
+                foreach (var dll in Directory.GetFiles(full, "*.dll"))
+                    yield return dll;
+            }
+            else if (File.Exists(full))
+            {
+                yield return full;
+            }
+        }
     }
 
     public void Dispose() => _mlc.Dispose();
