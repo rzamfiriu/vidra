@@ -66,6 +66,10 @@
     </PropertyGroup>
   </Target>
 
+  <Target Name="_VidraCodeGenResolveReferences"
+          DependsOnTargets="ResolveAssemblyReferences"
+          Condition="'$(UsingMicrosoftNETSdk)' == 'true'" />
+
   <!--
     Runs when there is something to scan: an explicit assembly list, or this
     project's own output once it exists. A project whose Build produced no
@@ -78,7 +82,7 @@
   -->
   <Target Name="VidraCodeGen"
           AfterTargets="Build"
-          DependsOnTargets="ResolveAssemblyReferences;_VidraCodeGenArguments"
+          DependsOnTargets="_VidraCodeGenResolveReferences;_VidraCodeGenArguments"
           Condition="'$(VidraGenerateTs)' == 'true' AND '$(TargetFramework)' != '' AND '$(VidraTsOutputDir)' != '' AND ('@(VidraCodeGenAssembly)' != '' OR Exists('$(TargetPath)'))">
 
     <Message Importance="high" Text="[Vidra] Generating TypeScript proxies from @(VidraCodeGenAssembly->'%(Filename)', ', ')..." />
@@ -92,7 +96,7 @@
   </Target>
 
   <Target Name="VidraCodeGenCheck"
-          DependsOnTargets="ResolveAssemblyReferences;_VidraCodeGenArguments"
+          DependsOnTargets="_VidraCodeGenResolveReferences;_VidraCodeGenArguments"
           Condition="'$(VidraGenerateTs)' == 'true' AND '$(TargetFramework)' != '' AND '$(VidraTsOutputDir)' != '' AND ('@(VidraCodeGenAssembly)' != '' OR Exists('$(TargetPath)'))">
     <Exec Command="$(VidraCodeGenCommand) $(_VidraCodeGenArgs) --check"
           WorkingDirectory="$(MSBuildProjectDirectory)"
