@@ -200,6 +200,17 @@ describe("diagnoseUpdateConfiguration", () => {
     ).toEqual([]);
   });
 
+  it("directs Android whole-app updates to Google Play", () => {
+    const [found] = diagnoseUpdateConfiguration({
+      ...clean,
+      target: "android",
+      config: { feed: { app: "https://cdn/notes/" } },
+    });
+
+    expect(found.name).toBe("Android app updates");
+    expect(found.detail).toContain("Google Play");
+  });
+
   /**
    * Everything below is an app scaffolded before the updater shipped live, when
    * turning updates on took five steps and one of them was skipped. New apps

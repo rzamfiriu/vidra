@@ -27,14 +27,17 @@ public static class MauiProgram
         // A bundle only installs when its contract fingerprints match this build,
         // so JS can never call a bridge the installed binary lacks.
         //
-        // Whole app: native code included, via Velopack. Its other half is the
-        // `VelopackApp` line in Platforms/*/Program.cs, which has to run before
-        // the UI framework starts.
+        // Whole app (desktop): native code included, via Velopack. Its other
+        // half is the `VelopackApp` line in the desktop Program.cs files, which
+        // has to run before the UI framework starts. Google Play owns Android
+        // app updates; only the web-bundle tier runs there.
         builder
             .UseMauiApp<App>()
             .UseVidra()
             .UseVidraUpdates()
+#if !ANDROID
             .UseVidraNativeUpdates()
+#endif
             .ConfigureFonts(fonts =>
             {
                 fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");

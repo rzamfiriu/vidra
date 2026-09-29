@@ -51,6 +51,7 @@ describe("NativeMessageTransport", () => {
   afterEach(() => {
     delete (window as any).webkit;
     delete (window as any).chrome;
+    delete (window as any)[NATIVE_CHANNEL];
   });
 
   const installAppleChannel = () => {
@@ -67,6 +68,12 @@ describe("NativeMessageTransport", () => {
     return postMessage;
   };
 
+  const installAndroidChannel = () => {
+    const postMessage = vi.fn();
+    (window as any)[NATIVE_CHANNEL] = { postMessage };
+    return postMessage;
+  };
+
   it("detects the WKWebView (Apple) channel", () => {
     expect(hasNativeMessageChannel()).toBe(false);
     installAppleChannel();
@@ -76,6 +83,12 @@ describe("NativeMessageTransport", () => {
   it("detects the WebView2 (Windows) channel", () => {
     expect(hasNativeMessageChannel()).toBe(false);
     installWindowsChannel();
+    expect(hasNativeMessageChannel()).toBe(true);
+  });
+
+  it("detects the Android WebView channel", () => {
+    expect(hasNativeMessageChannel()).toBe(false);
+    installAndroidChannel();
     expect(hasNativeMessageChannel()).toBe(true);
   });
 
@@ -105,6 +118,19 @@ describe("NativeMessageTransport", () => {
       kind: "reverse",
       data: { id: "rev_1", success: true, data: 42 },
     });
+  });
+
+  it("posts a framed request to the Android channel without an iframe", () => {
+    document.body.innerHTML = "";
+    const postMessage = installAndroidChannel();
+    new NativeMessageTransport().send({ id: "r", module: "a", method: "b" });
+
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(postMessage.mock.calls[0][0])).toMatchObject({
+      kind: "request",
+      data: { id: "r", module: "a", method: "b" },
+    });
+    expect(document.body.querySelectorAll("iframe")).toHaveLength(0);
   });
 
   it("does not create iframes (unlike the custom-scheme transport)", () => {

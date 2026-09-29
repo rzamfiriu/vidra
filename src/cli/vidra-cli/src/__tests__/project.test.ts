@@ -7,7 +7,7 @@ import { detectProject, detectPlatform } from "../project.js";
 describe("detectPlatform", () => {
   it("maps process.platform to a Vidra platform name", () => {
     const actual = detectPlatform();
-    expect(["macos", "windows", "linux"]).toContain(actual);
+    expect(["macos", "windows", "android"]).toContain(actual);
   });
 });
 

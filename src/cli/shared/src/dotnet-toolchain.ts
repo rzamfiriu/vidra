@@ -50,6 +50,26 @@ export const newestNet10Sdk = (listSdksOutput: string): string | undefined =>
 export const outputMentionsMaui = (workloadListOutput: string): boolean =>
   MAUI_WORKLOAD.test(workloadListOutput);
 
+export type MauiTarget = "macos" | "windows" | "android";
+
+export const outputMentionsMauiTarget = (
+  workloadListOutput: string,
+  target?: MauiTarget,
+): boolean => {
+  if (!target) return outputMentionsMaui(workloadListOutput);
+  const targetWorkload =
+    target === "macos"
+      ? "maui-maccatalyst"
+      : target === "windows"
+        ? "maui-windows"
+        : "maui-android";
+  return new RegExp(
+    `(?:\\[(?:maui|${targetWorkload})\\]|^\\s*(?:maui|${targetWorkload})\\s)`,
+    "m",
+  )
+    .test(workloadListOutput);
+};
+
 export const checkDotnetSdk = (): Requirement => {
   const name = ".NET SDK";
   const res = run(DOTNET, ["--list-sdks"]);
@@ -77,18 +97,35 @@ export const checkDotnetSdk = (): Requirement => {
   };
 };
 
-export const isMauiWorkloadInstalled = (): boolean =>
-  outputMentionsMaui(run(DOTNET, ["workload", "list"]).stdout);
+export const isMauiWorkloadInstalled = (target?: MauiTarget): boolean =>
+  outputMentionsMauiTarget(
+    run(DOTNET, ["workload", "list"]).stdout,
+    target,
+  );
 
 // --- Workload gate -----------------------------------------------------------
 
-const installWorkload = (csprojPath?: string): boolean => {
-  // `workload restore <csproj>` installs only the workloads the project's
-  // target frameworks need (e.g. just maccatalyst on macOS); the umbrella
-  // `install maui` is the documented fallback when no project is in scope.
-  const args = csprojPath
-    ? ["workload", "restore", csprojPath]
-    : ["workload", "install", "maui"];
+export const mauiWorkloadFor = (target?: MauiTarget): string =>
+  target === "android"
+    ? "maui-android"
+    : target === "windows"
+      ? "maui-windows"
+      : target === "macos"
+        ? "maui-maccatalyst"
+        : "maui";
+
+const installWorkload = (
+  csprojPath?: string,
+  target?: MauiTarget,
+): boolean => {
+  // Daily target-specific commands install only their platform component.
+  // The scaffolder has no selected target, so it restores the project's full
+  // TFM set; the umbrella workload is the fallback when neither is in scope.
+  const args = target
+    ? ["workload", "install", mauiWorkloadFor(target)]
+    : csprojPath
+      ? ["workload", "restore", csprojPath]
+      : ["workload", "install", "maui"];
 
   console.log();
   console.log(
@@ -117,7 +154,9 @@ const installWorkload = (csprojPath?: string): boolean => {
         ),
       ),
     );
-    console.error(fixLine("sudo dotnet workload install maui"));
+    console.error(
+      fixLine(`sudo dotnet workload install ${mauiWorkloadFor(target)}`),
+    );
     console.error();
     return false;
   }
@@ -132,6 +171,7 @@ const installWorkload = (csprojPath?: string): boolean => {
 export const ensureMauiWorkload = async (opts: {
   csprojPath?: string;
   interactive?: boolean;
+  target?: MauiTarget;
 } = {}): Promise<boolean> => {
   const dotnet = checkDotnetSdk();
   if (dotnet.status === "missing") {
@@ -151,7 +191,7 @@ export const ensureMauiWorkload = async (opts: {
   // SDK present but unverifiable — let the real build surface any error.
   if (dotnet.status === "unknown") return true;
 
-  if (isMauiWorkloadInstalled()) return true;
+  if (isMauiWorkloadInstalled(opts.target)) return true;
 
   console.log();
   console.log(
@@ -177,7 +217,10 @@ export const ensureMauiWorkload = async (opts: {
       install = false;
     }
     if (install) {
-      if (installWorkload(opts.csprojPath) && isMauiWorkloadInstalled()) {
+      if (
+        installWorkload(opts.csprojPath, opts.target)
+        && isMauiWorkloadInstalled(opts.target)
+      ) {
         console.log(
           row({
             glyph: "done",
@@ -191,7 +234,9 @@ export const ensureMauiWorkload = async (opts: {
     }
   }
 
-  console.log(fixLine("dotnet workload install maui", "run:"));
+  console.log(
+    fixLine(`dotnet workload install ${mauiWorkloadFor(opts.target)}`, "run:"),
+  );
   console.log(fixLine(MAUI_DOCS, "docs:"));
   return false;
 };

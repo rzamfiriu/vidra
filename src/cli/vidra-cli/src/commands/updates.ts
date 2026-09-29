@@ -269,7 +269,7 @@ const configContext = () => ({
     ? "macos" as const
     : process.platform === "win32"
       ? "windows" as const
-      : null,
+      : "android" as const,
 });
 
 const feedRow = (label: string, base: string | null, off: string): void => {

@@ -31,6 +31,10 @@ describe("artifactKind", () => {
     expect(artifactKind("/out/App.Host.exe")).toBe("windows");
   });
 
+  it.each(["apk", "aab"])("routes an .%s to the Android checks", (extension) => {
+    expect(artifactKind(`/out/App-1.0-android.${extension}`)).toBe("android");
+  });
+
   it("treats a plain directory as a Windows publish folder", () => {
     expect(artifactKind("/out/publish")).toBe("windows");
   });

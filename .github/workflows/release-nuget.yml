@@ -1,8 +1,8 @@
 name: Release NuGet
 
 # Cross-platform NuGet release. Most Vidra packages target a platform-specific
-# TFM (net10.0-maccatalyst / net10.0-windows...) that can only be built on its
-# native OS, so we pack on each OS and then merge each package's per-OS builds
+# TFM (net10.0-maccatalyst / net10.0-windows... / net10.0-android) that needs
+# its platform workload, so we pack on each build host and merge those builds
 # into a single multi-TFM package before pushing.
 #
 # Run from the Actions tab. Leave `push` unchecked for a dry run that packs,
@@ -39,8 +39,11 @@ jobs:
             maui-workload: maui
             artifact: nupkgs-macos
           - os: windows-latest
-            maui-workload: maui-windows
+            maui-workload: maui
             artifact: nupkgs-windows
+          - os: ubuntu-latest
+            maui-workload: maui-android
+            artifact: nupkgs-android
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -115,8 +118,14 @@ jobs:
           name: nupkgs-windows
           path: pkg-windows
 
+      - name: Download Android packages
+        uses: actions/download-artifact@v8
+        with:
+          name: nupkgs-android
+          path: pkg-android
+
       - name: Merge per-OS packages into multi-TFM packages
-        run: python3 scripts/merge-nupkgs.py --inputs pkg-macos pkg-windows --output merged
+        run: python3 scripts/merge-nupkgs.py --inputs pkg-macos pkg-windows pkg-android --output merged
 
       - name: Upload merged packages
         uses: actions/upload-artifact@v7

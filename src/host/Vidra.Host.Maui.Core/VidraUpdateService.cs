@@ -41,6 +41,7 @@ internal sealed class VidraUpdateService(VidraUpdateOptions options, IServicePro
     private readonly BundleStore _store = new(FileSystem.AppDataDirectory);
     private UpdateState _state = UpdateState.Empty;
     private bool _configLoaded;
+    private int _startupStarted;
 
     public string? CurrentBundle => _state.Current;
 
@@ -49,6 +50,22 @@ internal sealed class VidraUpdateService(VidraUpdateOptions options, IServicePro
     public string? PendingVersion => _state.PendingVersion;
 
     public UpdateCheckResult? LastCheck { get; private set; }
+
+    internal void StartAtLaunch()
+    {
+        if (Interlocked.Exchange(ref _startupStarted, 1) != 0)
+            return;
+
+        if (!string.IsNullOrEmpty(VidraRuntimeSettings.Get(VidraRuntimeSettings.DevUrl)))
+        {
+            Console.WriteLine("[vidra] update: skipped — this is a dev session");
+            return;
+        }
+
+        ApplyStartupTransition();
+        WatchForBoot();
+        _ = RunStartupCheckAsync();
+    }
 
     /// <summary>
     /// Runs before the first page is built. Promotion, rollback and choosing the
@@ -149,7 +166,7 @@ internal sealed class VidraUpdateService(VidraUpdateOptions options, IServicePro
             AppFingerprint = BridgeContractRegistry.Fingerprint(BridgeManifestScope.App),
             AccessFingerprint = services.GetRequiredService<IBridgeAccessPolicy>().Fingerprint,
             EmbeddedVersion = EmbeddedVersion(),
-            Channel = options.Channel ?? Environment.GetEnvironmentVariable(VidraUpdateOptions.ChannelEnvironmentVariable),
+            Channel = options.Channel ?? VidraRuntimeSettings.Get(VidraUpdateOptions.ChannelEnvironmentVariable),
             TrustedPublicKeys = [.. options.PublicKeys],
         };
 
@@ -216,7 +233,7 @@ internal sealed class VidraUpdateService(VidraUpdateOptions options, IServicePro
 
     private TimeSpan StartupDelay()
         => int.TryParse(
-            Environment.GetEnvironmentVariable(VidraUpdateOptions.StartupDelayEnvironmentVariable),
+            VidraRuntimeSettings.Get(VidraUpdateOptions.StartupDelayEnvironmentVariable),
             out var seconds) && seconds >= 0
                 ? TimeSpan.FromSeconds(seconds)
                 : options.StartupDelay;
@@ -224,7 +241,7 @@ internal sealed class VidraUpdateService(VidraUpdateOptions options, IServicePro
     /// <summary>The environment wins, so a test or a staging build can redirect the feed.</summary>
     private string? ConfiguredFeedUrl()
     {
-        var fromEnvironment = Environment.GetEnvironmentVariable(VidraUpdateOptions.FeedUrlEnvironmentVariable);
+        var fromEnvironment = VidraRuntimeSettings.Get(VidraUpdateOptions.FeedUrlEnvironmentVariable);
         if (!string.IsNullOrWhiteSpace(fromEnvironment))
             return fromEnvironment;
 

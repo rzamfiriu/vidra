@@ -1,6 +1,6 @@
 import path from "node:path";
 import fs from "fs-extra";
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { parseArgs } from "@vidra-dev/cli-shared/utils";
 import { formatBuildError, formatProcessError } from "@vidra-dev/cli-shared/exec";
 import { resolveAppVersion, versionPublishArgs } from "../version.js";
@@ -55,6 +55,13 @@ import {
   verifyWindowsSignature,
 } from "../windows-signing.js";
 import { windowsTarget } from "../targets/windows.js";
+import {
+  androidPublishArgs,
+  androidTarget,
+  resolveAndroidSigningConfig,
+  verifyAndroidPackage,
+  type AndroidSigningConfig,
+} from "../targets/android.js";
 import { ensureMauiWorkload } from "@vidra-dev/cli-shared/dotnet-toolchain";
 import {
   looksLikeMissingWorkload,
@@ -77,14 +84,19 @@ import {
 const TARGETS: Record<string, BuildTarget> = {
   macos: macosTarget,
   windows: windowsTarget,
+  android: androidTarget,
 };
 
 const packageLabel = (target: BuildTarget): string =>
-  target.name === "macos" ? "package DMG" : "package ZIP";
+  target.name === "macos"
+    ? "package DMG"
+    : target.name === "windows"
+      ? "package ZIP"
+      : "package APK/AAB";
 
 const artifactName = (project: ProjectInfo, target: BuildTarget): string =>
   `${project.projectName}-${project.displayVersion}-${target.name}.${
-    target.name === "macos" ? "dmg" : "zip"
+    target.name === "macos" ? "dmg" : target.name === "windows" ? "zip" : "aab"
   }`;
 
 /**
@@ -151,7 +163,7 @@ export const buildCommand = async (argv: string[]): Promise<void> => {
   const loadedConfig = await loadVidraConfig(project.root, {
     command: "build",
     mode: "production",
-    target: target?.name as "macos" | "windows" | null,
+    target: target?.name as "macos" | "windows" | "android" | null,
   });
   const updateConfig = loadedConfig.updates;
   if (!plan) {
@@ -240,8 +252,44 @@ export const buildCommand = async (argv: string[]): Promise<void> => {
   console.log(kv("target", appTarget.framework));
   console.log();
 
+  let androidSigning: AndroidSigningConfig | null = null;
+  if (appTarget.name === "android") {
+    try {
+      androidSigning = resolveAndroidSigningConfig();
+      if (!androidSigning && !plan) {
+        throw new Error(
+          "Android release builds require a signing keystore — set VIDRA_ANDROID_KEYSTORE, VIDRA_ANDROID_KEY_ALIAS, VIDRA_ANDROID_KEY_PASSWORD, and VIDRA_ANDROID_STORE_PASSWORD",
+        );
+      }
+    } catch (error) {
+      console.error(
+        row({
+          glyph: "error",
+          label: "android signing",
+          labelWidth: LABEL_WIDTH,
+          detail: dim(error instanceof Error ? error.message : String(error)),
+        }),
+      );
+      process.exit(1);
+    }
+  }
+
+  if (appTarget.name === "android" && feeds.app) {
+    console.error(
+      row({
+        glyph: "error",
+        label: "app updates",
+        labelWidth: LABEL_WIDTH,
+        detail: dim(
+          "whole-app feeds are not supported on Android — publish the AAB through Google Play and configure a web-only feed",
+        ),
+      }),
+    );
+    process.exit(1);
+  }
+
   const nativeSettings: NativeUpdateSettings | null =
-    feeds.app && layout.app
+    appTarget.name !== "android" && feeds.app && layout.app
       ? resolveNativeUpdateSettings({
           feed: feeds.app,
           releaseDir: layout.app,
@@ -291,14 +339,22 @@ export const buildCommand = async (argv: string[]): Promise<void> => {
   }
 
   // Verify the MAUI workload before the (slow) UI build so we fail fast.
-  if (!(await ensureMauiWorkload({ csprojPath: project.csprojPath }))) {
+  if (!(await ensureMauiWorkload({
+    csprojPath: project.csprojPath,
+    target: appTarget.name as "macos" | "windows" | "android",
+  }))) {
     process.exit(1);
   }
 
   stepBuildUi(project, verbose);
   stepCopyAssets(project);
   stepStampUpdateConfig(project, updateConfig, feeds, layout);
-  const publishDir = stepDotnetPublish(project, appTarget, verbose);
+  const publishDir = stepDotnetPublish(
+    project,
+    appTarget,
+    verbose,
+    androidSigning ? androidPublishArgs(androidSigning) : undefined,
+  );
 
   const bundlePath = appTarget.findBundle(publishDir, project.projectName);
   if (!bundlePath) {
@@ -359,15 +415,38 @@ export const buildCommand = async (argv: string[]): Promise<void> => {
     : null;
   const released = packed?.status === "packed" ? packed : null;
 
-  const outputPath =
+  const outputPaths =
     released && appTarget.name === "windows"
-      ? stepPublishVelopackWindowsArtifacts(project, layout, appTarget, released)
+      ? [stepPublishVelopackWindowsArtifacts(project, layout, appTarget, released)]
       : await stepPackage(
           project,
           layout,
           appTarget,
           released ? extractPackedApp(released.outputs.portableZip!) : bundlePath,
         );
+  const outputPath = outputPaths[0];
+
+  if (appTarget.name === "android") {
+    for (const artifact of outputPaths) {
+      const verification = verifyAndroidPackage(artifact);
+      console.log(
+        row({
+          glyph: verification.ok ? "done" : "error",
+          label: "verify sig",
+          labelWidth: LABEL_WIDTH,
+          detail: dim(
+            verification.ok
+              ? `${verification.tool} accepted ${path.basename(artifact)}`
+              : `${verification.tool} rejected ${path.basename(artifact)}`,
+          ),
+        }),
+      );
+      if (!verification.ok) {
+        if (verification.output) console.error(dim(verification.output.trim()));
+        process.exit(1);
+      }
+    }
+  }
 
   if (appTarget.name === "macos") {
     signMacDmgIfPossible(outputPath, io);
@@ -403,7 +482,9 @@ export const buildCommand = async (argv: string[]): Promise<void> => {
   console.log();
   console.log(
     footer(
-      `${dim("done \u2014")} ${value(path.relative(project.root, outputPath))}`,
+      `${dim("done \u2014")} ${outputPaths
+        .map((artifact) => value(path.relative(project.root, artifact)))
+        .join(dim(" · "))}`,
     ),
   );
   console.log();
@@ -678,7 +759,7 @@ const printBuildPlan = (
         detail: dim("spctl --assess"),
       }),
     );
-  } else {
+  } else if (target.name === "windows") {
     const winCert = resolveWindowsSigningConfig();
     console.log(
       row({
@@ -712,6 +793,28 @@ const printBuildPlan = (
         }),
       );
     }
+  } else {
+    const signing = resolveAndroidSigningConfig();
+    console.log(
+      row({
+        glyph: signing ? "done" : "error",
+        label: "android signing",
+        labelWidth: LABEL_WIDTH,
+        detail: dim(
+          signing
+            ? `${signing.keyAlias} · ${signing.keyStore}`
+            : "keystore credentials are required for release",
+        ),
+      }),
+    );
+    console.log(
+      row({
+        glyph: "active",
+        label: "package APK/AAB",
+        labelWidth: LABEL_WIDTH,
+        detail: `${dim("signed release →")} ${value(artifactName(project, target))}`,
+      }),
+    );
   }
 };
 
@@ -835,20 +938,32 @@ const stepDotnetPublish = (
   project: ProjectInfo,
   target: BuildTarget,
   verbose: boolean,
+  publishArgsOverride?: string[],
 ): string => {
   const start = Date.now();
 
-  const extraArgs = target.extraPublishArgs ?? "-p:CreatePackage=false";
+  const extraArgs =
+    publishArgsOverride ?? target.extraPublishArgs ?? ["-p:CreatePackage=false"];
   // The app's package.json owns the version; stamp it into the bundle so the
   // artifact, its metadata and any future updater all agree on one number.
   const version = resolveAppVersion(project.root, project.csprojPath);
-  const versionArgs = versionPublishArgs(version).join(" ");
   try {
-    execSync(
-      `dotnet publish "${project.csprojPath}" -c Release -f ${target.framework} ${extraArgs} ${versionArgs}`,
+    execFileSync(
+      "dotnet",
+      [
+        "publish",
+        project.csprojPath,
+        "-c",
+        "Release",
+        "-f",
+        target.framework,
+        ...extraArgs,
+        ...versionPublishArgs(version),
+      ],
       {
         cwd: project.root,
         stdio: verbose ? "inherit" : "pipe",
+        maxBuffer: 64 * 1024 * 1024,
       },
     );
   } catch (e: unknown) {
@@ -1048,16 +1163,19 @@ const stepPackage = async (
   layout: DistLayout,
   target: BuildTarget,
   bundlePath: string,
-): Promise<string> => {
+): Promise<string[]> => {
   const outputDir = layout.root;
   fs.ensureDirSync(outputDir);
 
   const start = Date.now();
-  let outputPath: string;
+  let outputPaths: string[];
   try {
-    outputPath = await target.package(bundlePath, outputDir, {
+    const version = resolveAppVersion(project.root, project.csprojPath);
+    outputPaths = await target.package(bundlePath, outputDir, {
       projectName: project.projectName,
       displayVersion: project.displayVersion,
+      buildNumber: version.build,
+      projectRoot: project.root,
     });
   } catch (e: unknown) {
     console.error(
@@ -1073,15 +1191,17 @@ const stepPackage = async (
   }
 
   const pkgTime = ((Date.now() - start) / 1000).toFixed(1);
-  const sizeMB = (fs.statSync(outputPath).size / (1024 * 1024)).toFixed(1);
-  console.log(
-    row({
-      glyph: "done",
-      label: packageLabel(target),
-      labelWidth: LABEL_WIDTH,
-      detail: `${value(path.basename(outputPath))} ${dim(`(${sizeMB} MB, ${pkgTime}s)`)}`,
-    }),
-  );
+  for (const [index, outputPath] of outputPaths.entries()) {
+    const sizeMB = (fs.statSync(outputPath).size / (1024 * 1024)).toFixed(1);
+    console.log(
+      row({
+        glyph: "done",
+        label: index === 0 ? packageLabel(target) : "",
+        labelWidth: LABEL_WIDTH,
+        detail: `${value(path.basename(outputPath))} ${dim(`(${sizeMB} MB, ${pkgTime}s)`)}`,
+      }),
+    );
+  }
 
-  return outputPath;
+  return outputPaths;
 };

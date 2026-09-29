@@ -42,6 +42,7 @@ const App = () => {
     // Emitted by the native host when `vidra dev` hot reloads edited C#.
     const unsubscribeHotReloaded = runtime.onHotReloaded(
       (data) => {
+        (window as any).__vidraEventProof = true;
         const typeName = data?.updatedTypes?.[0]?.split(".").pop();
         setCsReloaded(typeName ? `C# reloaded · ${typeName}` : "C# reloaded");
         window.clearTimeout(reloadFlashTimer.current);
@@ -63,6 +64,7 @@ const App = () => {
     void appWindow
       .getSupport()
       .then((result: WindowSupport) => {
+        (window as any).__vidraNativeCallProof = true;
         setWindowSupport(result);
       })
       .catch(() => {
@@ -268,8 +270,12 @@ const App = () => {
 
           <div className="actions">
             <button onClick={handleGetWindowInfo}>Get Window Info</button>
-            <button onClick={handleRenameWindow}>Rename Window</button>
-            <button onClick={handleResizeWindow}>Resize Window</button>
+            {windowSupport?.setTitle && (
+              <button onClick={handleRenameWindow}>Rename Window</button>
+            )}
+            {windowSupport?.configure && (
+              <button onClick={handleResizeWindow}>Resize Window</button>
+            )}
             {windowSupport?.center && (
               <button onClick={handleCenterWindow}>Center Window</button>
             )}
@@ -288,9 +294,9 @@ const App = () => {
 
           {!showsAdvancedWindowActions && windowSupport && (
             <p className="note">
-              This runtime currently supports title and size updates only.
               Unsupported window actions are hidden automatically based on native
-              support metadata.
+              support metadata. Android exposes current window information but no
+              desktop window controls.
             </p>
           )}
         </section>

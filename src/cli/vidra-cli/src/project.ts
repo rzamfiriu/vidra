@@ -19,9 +19,9 @@ export const detectPlatform = (): string => {
     case "win32":
       return "windows";
     case "linux":
-      return "linux";
+      return "android";
     default:
-      return "macos";
+      return process.platform;
   }
 };
 

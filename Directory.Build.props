@@ -17,7 +17,7 @@
     <PackageProjectUrl>https://vidra.build</PackageProjectUrl>
     <RepositoryUrl>https://github.com/rzamfiriu/vidra.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <PackageTags>vidra;maui;webview;react;desktop;cross-platform</PackageTags>
+    <PackageTags>vidra;maui;webview;react;desktop;android;mobile;cross-platform</PackageTags>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
   </PropertyGroup>
 

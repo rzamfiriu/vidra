@@ -19,7 +19,7 @@ public sealed class DialogsModule : BridgeModuleBase
     {
         var page = Application.Current?.Windows.FirstOrDefault()?.Page
             ?? throw new InvalidOperationException("No active page.");
-        await page.DisplayAlert(args.Title, args.Message, args.Ok ?? "OK");
+        await page.DisplayAlertAsync(args.Title, args.Message, args.Ok ?? "OK");
         return new AlertResult(true);
     }
 
@@ -28,7 +28,11 @@ public sealed class DialogsModule : BridgeModuleBase
     {
         var page = Application.Current?.Windows.FirstOrDefault()?.Page
             ?? throw new InvalidOperationException("No active page.");
-        var result = await page.DisplayAlert(args.Title, args.Message, args.Accept ?? "Yes", args.Cancel ?? "No");
+        var result = await page.DisplayAlertAsync(
+            args.Title,
+            args.Message,
+            args.Accept ?? "Yes",
+            args.Cancel ?? "No");
         return new ConfirmResult(result);
     }
 

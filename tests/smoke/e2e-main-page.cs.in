@@ -23,7 +23,7 @@ public class MainPage : VidraPage
 
     public MainPage()
     {
-        var proofPath = Environment.GetEnvironmentVariable("VIDRA_E2E_PROOF");
+        var proofPath = VidraRuntimeSettings.Get("VIDRA_E2E_PROOF");
         if (string.IsNullOrEmpty(proofPath))
         {
             return;

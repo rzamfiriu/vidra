@@ -12,7 +12,7 @@ export const DEV: CommandSpec = {
   summary: "start vite + the native host (UI and C# reload on save)",
   usage: "dev [--target <os>] [--no-hot-reload]",
   flags: [
-    { name: "--target", arg: "os", describe: "macos or windows (default: this machine)" },
+    { name: "--target", arg: "os", describe: "macos, windows, or android (default: this machine)" },
     { name: "--no-hot-reload", describe: "skip dotnet watch, build and launch once" },
     { name: "--port", arg: "n", describe: "vite port (default: 5173, or the next free one)" },
     { name: "--verbose", describe: "stream the full build output" },
@@ -28,7 +28,7 @@ export const RUN: CommandSpec = {
   summary: "launch the native host only",
   usage: "run [--target <os>]",
   flags: [
-    { name: "--target", arg: "os", describe: "macos or windows (default: this machine)" },
+    { name: "--target", arg: "os", describe: "macos, windows, or android (default: this machine)" },
     { name: "--verbose", describe: "stream the full build output" },
   ],
 };
@@ -41,7 +41,7 @@ export const BUILD: CommandSpec = {
     { name: "--app", describe: "the installable app and its release, no web bundle" },
     { name: "--web", describe: "the web bundle only, no compile and no platform" },
     { name: "--channel", arg: "name", describe: "publish to a ring (env: VIDRA_CHANNEL)" },
-    { name: "--target", arg: "os", describe: "macos or windows (default: this machine)" },
+    { name: "--target", arg: "os", describe: "macos, windows, or android (default: this machine)" },
     { name: "--sign", arg: "key.pem", describe: "sign the web feed (env: VIDRA_UPDATE_SIGNING_KEY)" },
     { name: "--plan", describe: "print every step and artifact, run nothing" },
     { name: "--dry-run", describe: "alias for --plan" },
@@ -92,7 +92,10 @@ export const VERIFY: CommandSpec = {
 export const DOCTOR: CommandSpec = {
   name: "doctor",
   summary: "check your environment, and this project's update wiring",
-  usage: "doctor",
+  usage: "doctor [--target <os>]",
+  flags: [
+    { name: "--target", arg: "os", describe: "macos, windows, or android (default: this machine)" },
+  ],
 };
 
 /** The order `vidra --help` lists them in: daily loop first, release second. */

@@ -18,8 +18,12 @@ export const windowsTarget: BuildTarget = {
   // `RuntimeIdentifierOverride` (rather than `-r`/`RuntimeIdentifier`) is the
   // MAUI-recommended way to set the Windows RID — it sidesteps WindowsAppSDK
   // issue #3337, which otherwise pulls in the wrong packaging assets.
-  extraPublishArgs:
-    "-p:WindowsPackageType=None -p:SelfContained=true -p:WindowsAppSDKSelfContained=true -p:RuntimeIdentifierOverride=win-x64",
+  extraPublishArgs: [
+    "-p:WindowsPackageType=None",
+    "-p:SelfContained=true",
+    "-p:WindowsAppSDKSelfContained=true",
+    "-p:RuntimeIdentifierOverride=win-x64",
+  ],
 
   findBundle(publishDir: string, _projectName: string): string | null {
     // `dotnet publish` writes the self-contained output to <rid>/publish/. The
@@ -37,7 +41,7 @@ export const windowsTarget: BuildTarget = {
     publishOutputDir: string,
     outputDir: string,
     meta: AppMeta,
-  ): Promise<string> {
+  ): Promise<string[]> {
     const outName = `${meta.projectName}-${meta.displayVersion}-windows.zip`;
     const outPath = path.join(outputDir, outName);
     if (fs.existsSync(outPath)) fs.removeSync(outPath);
@@ -64,7 +68,7 @@ export const windowsTarget: BuildTarget = {
       fs.removeSync(staging);
     }
 
-    return outPath;
+    return [outPath];
   },
 };
 

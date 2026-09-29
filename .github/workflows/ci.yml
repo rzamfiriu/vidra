@@ -211,7 +211,7 @@ jobs:
           node "$GITHUB_WORKSPACE/src/cli/create-vidra-app/dist/index.js" \
             plan-smoke --app-id=com.vidra.plansmoke
           cd plan-smoke
-          for target in macos windows; do
+          for target in macos windows android; do
             output=$(node "$GITHUB_WORKSPACE/src/cli/vidra-cli/dist/cli.js" build --target "$target" --plan)
             echo "$output"
             echo "$output" | grep -q "nothing has run" || {
@@ -935,3 +935,126 @@ jobs:
             ${{ runner.temp }}/vidra-smoke/dist/feed/RELEASES*
             ${{ runner.temp }}/vidra-smoke/dist/feed/*delta.nupkg
           if-no-files-found: ignore
+
+  android-emulator:
+    name: Android emulator smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: |
+            src/cli/package-lock.json
+            src/sdk/vidra-js/package-lock.json
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install Android workload
+        run: dotnet workload install maui-android
+
+      - name: Build SDK, CLI, and local packages
+        run: |
+          npm ci --prefix src/sdk/vidra-js || npm install --prefix src/sdk/vidra-js
+          npm run build --prefix src/sdk/vidra-js
+          npm ci --prefix src/cli || npm install --prefix src/cli
+          npm run build --prefix src/cli --workspaces --if-present
+          ./pack-local.sh
+
+      - name: Scaffold Android smoke app
+        working-directory: ${{ runner.temp }}
+        run: |
+          node "$GITHUB_WORKSPACE/src/cli/create-vidra-app/dist/index.js" \
+            vidra-smoke --app-id=com.vidra.smoke
+          sed 's/__PROJECT_NAMESPACE__/VidraSmoke/' \
+            "$GITHUB_WORKSPACE/tests/smoke/ota-main-page.cs.in" \
+            > vidra-smoke/src/VidraSmoke.Host/MainPage.cs
+          (
+          cd vidra-smoke
+          node -e "
+            const fs = require('fs');
+            const config = fs.readFileSync('vidra.config.ts', 'utf8');
+            fs.writeFileSync(
+              'vidra.config.ts',
+              config.replace(
+                /updates:\\s*\\{\\s*feed:\\s*\"\"\\s*,?\\s*\\}/,
+                'updates: { feed: { web: \"http://127.0.0.1:8099/\" } }',
+              ),
+            );
+          "
+          )
+          npm ci --prefix vidra-smoke
+          npm ci --prefix vidra-smoke/ui
+
+      - name: Create Android release keystore
+        run: |
+          keytool -genkeypair -v \
+            -keystore "${{ runner.temp }}/vidra-release.jks" \
+            -storepass android -keypass android -alias release \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Vidra CI,O=Vidra,C=US"
+
+      - name: Build signed APK and AAB
+        working-directory: ${{ runner.temp }}/vidra-smoke
+        env:
+          VIDRA_ANDROID_KEYSTORE: ${{ runner.temp }}/vidra-release.jks
+          VIDRA_ANDROID_KEY_ALIAS: release
+          VIDRA_ANDROID_KEY_PASSWORD: android
+          VIDRA_ANDROID_STORE_PASSWORD: android
+          # Intent-extra controls stay gated by the manifest debuggable flag;
+          # this release-shaped smoke opts in explicitly.
+          VIDRA_ANDROID_DEBUGGABLE: "1"
+        run: |
+          node "$GITHUB_WORKSPACE/src/cli/vidra-cli/dist/cli.js" \
+            build --target android --app
+          test -n "$(ls dist/*-android.apk)"
+          test -n "$(ls dist/*-android.aab)"
+
+      - name: Launch and prove bridge + OTA promotion/rollback
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            set -euo pipefail
+            apk="$(ls '${{ runner.temp }}/vidra-smoke'/dist/*-android.apk)"
+            adb install -r "$apk"
+            adb reverse tcp:8099 tcp:8099
+            node "$GITHUB_WORKSPACE/tests/smoke/ota-e2e.mjs" \
+              --android-app-id com.vidra.smoke \
+              --project '${{ runner.temp }}/vidra-smoke' \
+              --cli "$GITHUB_WORKSPACE/src/cli/vidra-cli/dist/cli.js" \
+              --work '${{ runner.temp }}/android-ota-work' \
+              --port 8099
+
+      - name: Upload Android artifacts and logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-smoke-artifacts
+          path: |
+            ${{ runner.temp }}/vidra-smoke/dist/*.apk
+            ${{ runner.temp }}/vidra-smoke/dist/*.aab
+          if-no-files-found: error
