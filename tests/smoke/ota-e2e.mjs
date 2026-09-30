@@ -416,17 +416,18 @@ function launchAndroid(name, timeout) {
   adb("logcat", "-c");
 
   console.log(`\n=================== launch: ${name} ===================`);
+  const component = androidLauncherComponent(adb);
+  console.log(`    activity ${component}`);
   const started = adb(
     "shell",
     "am",
     "start",
-    "-W",
+    "-n",
+    component,
     "-a",
     "android.intent.action.MAIN",
     "-c",
     "android.intent.category.LAUNCHER",
-    "-p",
-    androidAppId,
     "--es",
     "VIDRA_OTA_PROOF",
     deviceProof,
@@ -437,8 +438,13 @@ function launchAndroid(name, timeout) {
     "VIDRA_UPDATE_STARTUP_DELAY",
     "1",
   );
-  if (started.status !== 0) {
-    throw new Error(`launch ${name} failed: ${started.stderr}`);
+  if ((started.status ?? 1) !== 0) {
+    const detail = adbText(started) || started.error?.message || "no output";
+    const excerpt = androidLogExcerpt(adb("logcat", "-d").stdout ?? "");
+    throw new Error(
+      `launch ${name} failed (exit=${started.status}): ${detail}` +
+        (excerpt ? `\n${excerpt}` : ""),
+    );
   }
 
   const deadline = Date.now() + (timeout + 45) * 1000;
@@ -452,13 +458,22 @@ function launchAndroid(name, timeout) {
     Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
   }
 
-  const output = adb("logcat", "-d").stdout;
+  const output = adb("logcat", "-d").stdout ?? "";
+  if (!proofText) {
+    const excerpt = androidLogExcerpt(output);
+    if (excerpt) {
+      for (const line of excerpt.split("\n")) console.log(`    ${line}`);
+    }
+    throw new Error(
+      `launch ${name} wrote no Android proof` + (excerpt ? `\n${excerpt}` : ""),
+    );
+  }
+
   for (const line of output.split(/\r?\n/)) {
     if (line.includes("[vidra]") || line.toLowerCase().includes("error")) {
       console.log(`    ${line}`);
     }
   }
-  if (!proofText) throw new Error(`launch ${name} wrote no Android proof`);
 
   const proof = JSON.parse(proofText);
   proof.output = output;
@@ -467,6 +482,52 @@ function launchAndroid(name, timeout) {
       `pending=${proof.pendingVersion} counter=${proof.counter}`,
   );
   return proof;
+}
+
+function androidLauncherComponent(adb) {
+  const resolved = adb(
+    "shell",
+    "cmd",
+    "package",
+    "resolve-activity",
+    "--brief",
+    "-a",
+    "android.intent.action.MAIN",
+    "-c",
+    "android.intent.category.LAUNCHER",
+    "-p",
+    androidAppId,
+  );
+  const component = (resolved.stdout ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => /^[a-zA-Z0-9._]+\/[a-zA-Z0-9._$]+$/.test(line));
+  if (component) return component;
+
+  const installed = adb("shell", "pm", "path", androidAppId);
+  throw new Error(
+    `no launcher activity for ${androidAppId} (resolve exit=${resolved.status}): ` +
+      `${adbText(resolved) || "no output"}; ` +
+      `pm path (exit=${installed.status}): ${adbText(installed) || "no output"}`,
+  );
+}
+
+function adbText(result) {
+  return `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
+}
+
+function androidLogExcerpt(log) {
+  const lines = log.split(/\r?\n/).filter((line) => {
+    const lower = line.toLowerCase();
+    return (
+      line.includes("[vidra]")
+      || lower.includes("error")
+      || lower.includes("fatal")
+      || lower.includes("exception")
+      || lower.includes("monodroid")
+    );
+  });
+  return lines.slice(-40).join("\n");
 }
 
 function expect(actual, expected, what) {
