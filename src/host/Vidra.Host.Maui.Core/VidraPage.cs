@@ -15,6 +15,10 @@ public class VidraPage : ContentPage
 
     public VidraPage()
     {
+#if ANDROID
+        SafeAreaEdges = SafeAreaEdges.All;
+#endif
+
         AppWebView = new WebView
         {
             HorizontalOptions = LayoutOptions.Fill,
@@ -41,6 +45,15 @@ public class VidraPage : ContentPage
             }
         }
 
+#if ANDROID
+        // The Android lifecycle hook normally starts updates after MainActivity
+        // applies launch extras. Keep this idempotent fallback at the final
+        // ordering boundary: before this page's first WebView navigation.
+        IPlatformApplication.Current.Services
+            .GetService<VidraUpdateService>()
+            ?.StartAtLaunch();
+#endif
+
         LoadContent();
         AnnounceDevHostReady();
     }
@@ -54,25 +67,56 @@ public class VidraPage : ContentPage
     /// </summary>
     private static void AnnounceDevHostReady()
     {
-        if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("VIDRA_DEV_URL")))
+        if (!string.IsNullOrEmpty(VidraRuntimeSettings.Get(VidraRuntimeSettings.DevUrl)))
             Console.WriteLine("[vidra] host ready");
     }
 
     private void LoadContent()
     {
-        var devServerUrl = Environment.GetEnvironmentVariable("VIDRA_DEV_URL");
+        var devServerUrl = VidraRuntimeSettings.Get(VidraRuntimeSettings.DevUrl);
 
         if (!string.IsNullOrEmpty(devServerUrl))
         {
-            AppWebView.Source = new UrlWebViewSource { Url = devServerUrl };
+            NavigateWhenHandlerReady(devServerUrl);
         }
         else if (System.Diagnostics.Debugger.IsAttached)
         {
-            AppWebView.Source = new UrlWebViewSource { Url = "http://localhost:5173" };
+            NavigateWhenHandlerReady("http://localhost:5173");
         }
         else
         {
             Bridge.LoadProductionAssets(AppWebView);
         }
+    }
+
+    private void NavigateWhenHandlerReady(string url)
+    {
+        if (AppWebView.Handler is not null)
+        {
+            AppWebView.Source = new UrlWebViewSource { Url = url };
+            return;
+        }
+
+        EventHandler? onHandlerChanged = null;
+        onHandlerChanged = (_, _) =>
+        {
+            if (AppWebView.Handler is null)
+                return;
+
+            AppWebView.HandlerChanged -= onHandlerChanged;
+            AppWebView.Source = new UrlWebViewSource { Url = url };
+        };
+        AppWebView.HandlerChanged += onHandlerChanged;
+    }
+
+    protected override bool OnBackButtonPressed()
+    {
+        if (AppWebView.CanGoBack)
+        {
+            AppWebView.GoBack();
+            return true;
+        }
+
+        return base.OnBackButtonPressed();
     }
 }

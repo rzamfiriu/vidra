@@ -211,7 +211,7 @@ jobs:
           node "$GITHUB_WORKSPACE/src/cli/create-vidra-app/dist/index.js" \
             plan-smoke --app-id=com.vidra.plansmoke
           cd plan-smoke
-          for target in macos windows; do
+          for target in macos windows android; do
             output=$(node "$GITHUB_WORKSPACE/src/cli/vidra-cli/dist/cli.js" build --target "$target" --plan)
             echo "$output"
             echo "$output" | grep -q "nothing has run" || {
@@ -294,14 +294,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      # No xcode-select pin. There used to be one at 26.3, from when that was
-      # the newest Xcode on the image and the Catalyst reference assemblies
-      # already wanted a newer SDK than any Xcode present (MT0180) — pinning at
-      # least kept the rest of the toolchain on the best available. The image
-      # has moved on and the pin inverted: it held the runner at 26.3 while the
-      # current Catalyst pack requires the 26.5 SDK from Xcode 26.6, so the
-      # linker failed the build the pin was meant to protect. The image default
-      # satisfies the pack; log what we got rather than choosing for it.
+      # No xcode-select pin. There used to be one at 26.3, and it inverted: it
+      # held the runner on an older Xcode while the Catalyst pack required a
+      # newer SDK, so the linker failed the build the pin was meant to protect.
+      # The image default is the Xcode we link against. The workload set below
+      # is what has to stay within that Xcode's reach.
       - name: Log Xcode version (macOS)
         if: runner.os == 'macOS'
         run: |
@@ -324,18 +321,23 @@ jobs:
 
       # ---- Template build smoke (requires MAUI workload) ----
       #
-      # The manifest is deliberately NOT pinned. `--skip-manifest-update` used to
-      # be here because the newest maccatalyst manifest wanted the SDK from
-      # Xcode 26.4 while macos-latest topped out at 26.3 (MT0180 in ILLink's
-      # Setup step); the image now ships 26.6, so the reason is gone — and the
-      # pin had become actively harmful. It held the Catalyst SDK pack at
-      # 26.0.11017, where `dotnet run` execs `$(AssemblyName).app` while the
-      # build produces `$(_AppBundleName).app` (dotnet/macios#26318, fixed in
-      # 26.2.10233+). CI was therefore the only place the app could not launch
-      # under `dotnet watch`, which is precisely what this job exists to prove.
+      # macOS pins the workload set. An unpinned install now resolves to
+      # Mac Catalyst 27.0.10722, and ILLink dies with MT0180 because that pack
+      # requires the Xcode 27 SDK while macos-latest still has Xcode 26.
+      # 10.0.303.1 is the newest set still on the 26.5 SDK, which Xcode 26.6
+      # can link. Do not replace this with `--skip-manifest-update`: that froze
+      # the pack at 26.0.11017, before the app-bundle name fix
+      # (dotnet/macios#26318, 26.2.10233+), and `dotnet watch` could not launch
+      # the app — the thing this job exists to prove. Windows does not link
+      # against the Catalyst SDK, so it keeps the latest set.
       - name: Install MAUI workload (${{ matrix.maui-workload }})
         shell: bash
-        run: dotnet workload install ${{ matrix.maui-workload }}
+        run: |
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            dotnet workload install ${{ matrix.maui-workload }} --version 10.0.303.1
+          else
+            dotnet workload install ${{ matrix.maui-workload }}
+          fi
 
       - name: Log installed workloads
         shell: bash
@@ -935,3 +937,121 @@ jobs:
             ${{ runner.temp }}/vidra-smoke/dist/feed/RELEASES*
             ${{ runner.temp }}/vidra-smoke/dist/feed/*delta.nupkg
           if-no-files-found: ignore
+
+  android-emulator:
+    name: Android emulator smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: |
+            src/cli/package-lock.json
+            src/sdk/vidra-js/package-lock.json
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install Android workload
+        run: dotnet workload install maui-android
+
+      - name: Build SDK, CLI, and local packages
+        run: |
+          npm ci --prefix src/sdk/vidra-js || npm install --prefix src/sdk/vidra-js
+          npm run build --prefix src/sdk/vidra-js
+          npm ci --prefix src/cli || npm install --prefix src/cli
+          npm run build --prefix src/cli --workspaces --if-present
+          ./pack-local.sh
+
+      - name: Scaffold Android smoke app
+        working-directory: ${{ runner.temp }}
+        run: |
+          node "$GITHUB_WORKSPACE/src/cli/create-vidra-app/dist/index.js" \
+            vidra-smoke --app-id=com.vidra.smoke
+          sed 's/__PROJECT_NAMESPACE__/VidraSmoke/' \
+            "$GITHUB_WORKSPACE/tests/smoke/ota-main-page.cs.in" \
+            > vidra-smoke/src/VidraSmoke.Host/MainPage.cs
+          (
+          cd vidra-smoke
+          node -e "
+            const fs = require('fs');
+            const config = fs.readFileSync('vidra.config.ts', 'utf8');
+            fs.writeFileSync(
+              'vidra.config.ts',
+              config.replace(
+                /updates:\\s*\\{\\s*feed:\\s*\"\"\\s*,?\\s*\\}/,
+                'updates: { feed: { web: \"http://127.0.0.1:8099/\" } }',
+              ),
+            );
+          "
+          )
+          npm ci --prefix vidra-smoke
+          npm ci --prefix vidra-smoke/ui
+
+      - name: Create Android release keystore
+        run: |
+          keytool -genkeypair -v \
+            -keystore "${{ runner.temp }}/vidra-release.jks" \
+            -storepass android -keypass android -alias release \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Vidra CI,O=Vidra,C=US"
+
+      - name: Build signed APK and AAB
+        working-directory: ${{ runner.temp }}/vidra-smoke
+        env:
+          VIDRA_ANDROID_KEYSTORE: ${{ runner.temp }}/vidra-release.jks
+          VIDRA_ANDROID_KEY_ALIAS: release
+          VIDRA_ANDROID_KEY_PASSWORD: android
+          VIDRA_ANDROID_STORE_PASSWORD: android
+          # Intent-extra controls stay gated by the manifest debuggable flag;
+          # this release-shaped smoke opts in explicitly.
+          VIDRA_ANDROID_DEBUGGABLE: "1"
+        run: |
+          node "$GITHUB_WORKSPACE/src/cli/vidra-cli/dist/cli.js" \
+            build --target android --app
+          test -n "$(ls dist/*-android.apk)"
+          test -n "$(ls dist/*-android.aab)"
+
+      - name: Launch and prove bridge + OTA promotion/rollback
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            # Each line is a separate `sh -c`, so a variable set on one line
+            # is gone on the next, and a trailing backslash does not continue.
+            adb install -r ${{ runner.temp }}/vidra-smoke/dist/*-android.apk
+            adb reverse tcp:8099 tcp:8099
+            node "$GITHUB_WORKSPACE/tests/smoke/ota-e2e.mjs" --android-app-id com.vidra.smoke --project '${{ runner.temp }}/vidra-smoke' --cli "$GITHUB_WORKSPACE/src/cli/vidra-cli/dist/cli.js" --work '${{ runner.temp }}/android-ota-work' --port 8099
+
+      - name: Upload Android artifacts and logs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-smoke-artifacts
+          path: |
+            ${{ runner.temp }}/vidra-smoke/dist/*.apk
+            ${{ runner.temp }}/vidra-smoke/dist/*.aab
+          if-no-files-found: error

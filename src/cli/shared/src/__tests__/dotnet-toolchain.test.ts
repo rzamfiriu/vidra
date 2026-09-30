@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { hasNet10Sdk, newestNet10Sdk, outputMentionsMaui } from "../dotnet-toolchain.js";
+import {
+  hasNet10Sdk,
+  mauiWorkloadFor,
+  newestNet10Sdk,
+  outputMentionsMaui,
+  outputMentionsMauiTarget,
+} from "../dotnet-toolchain.js";
 
 describe("hasNet10Sdk", () => {
   it("detects a 10.x SDK in `dotnet --list-sdks` output", () => {
@@ -23,6 +29,31 @@ describe("hasNet10Sdk", () => {
 
   it("is false for empty output", () => {
     expect(hasNet10Sdk("")).toBe(false);
+  });
+});
+
+describe("outputMentionsMauiTarget", () => {
+  it("accepts the umbrella workload for Android", () => {
+    expect(outputMentionsMauiTarget("[maui]\n", "android")).toBe(true);
+  });
+
+  it("accepts the Android component workload", () => {
+    expect(outputMentionsMauiTarget("maui-android  10.0.0  SDK\n", "android")).toBe(true);
+  });
+
+  it("rejects a different platform-only workload", () => {
+    expect(
+      outputMentionsMauiTarget("maui-maccatalyst  10.0.0  SDK\n", "android"),
+    ).toBe(false);
+  });
+});
+
+describe("mauiWorkloadFor", () => {
+  it("returns the target-specific remediation workload", () => {
+    expect(mauiWorkloadFor("android")).toBe("maui-android");
+    expect(mauiWorkloadFor("windows")).toBe("maui-windows");
+    expect(mauiWorkloadFor("macos")).toBe("maui-maccatalyst");
+    expect(mauiWorkloadFor()).toBe("maui");
   });
 });
 

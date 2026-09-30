@@ -7,6 +7,15 @@ using Microsoft.Windows.AppNotifications.Builder;
 #if IOS || MACCATALYST
 using UserNotifications;
 #endif
+#if ANDROID
+using System.Runtime.Versioning;
+using Android.App;
+using Android.Content;
+using Android.Content.PM;
+using Android.OS;
+using AndroidX.Core.App;
+using Microsoft.Maui.ApplicationModel;
+#endif
 
 namespace Vidra.Modules.Notifications;
 
@@ -28,6 +37,8 @@ public sealed class NotificationsModule : BridgeModuleBase
         return new ShowResult(ShowWindowsNotification(args));
 #elif IOS || MACCATALYST
         return new ShowResult(await ShowAppleNotificationAsync(args, ct));
+#elif ANDROID
+        return new ShowResult(await ShowAndroidNotificationAsync(args, ct));
 #else
         return new ShowResult(false);
 #endif
@@ -40,10 +51,96 @@ public sealed class NotificationsModule : BridgeModuleBase
         return new RequestPermissionResult(GetWindowsNotificationsEnabled());
 #elif IOS || MACCATALYST
         return new RequestPermissionResult(await RequestApplePermissionAsync(ct));
+#elif ANDROID
+        return new RequestPermissionResult(await RequestAndroidPermissionAsync(ct));
 #else
         return new RequestPermissionResult(false);
 #endif
     }
+
+#if ANDROID
+    private const string AndroidChannelId = "vidra.general";
+
+    private static async Task<bool> ShowAndroidNotificationAsync(
+        ShowArgs args,
+        CancellationToken ct)
+    {
+        if (!await RequestAndroidPermissionAsync(ct))
+            return false;
+
+        var context = Android.App.Application.Context;
+        var manager = (NotificationManager?)context.GetSystemService(Context.NotificationService);
+        if (manager is null)
+            return false;
+
+        if (OperatingSystem.IsAndroidVersionAtLeast(26))
+            EnsureAndroidChannel(manager);
+        var launchIntent = context.PackageManager?.GetLaunchIntentForPackage(context.PackageName!);
+        PendingIntent? pendingIntent = null;
+        if (launchIntent is not null)
+        {
+            launchIntent.AddFlags(ActivityFlags.ClearTop | ActivityFlags.SingleTop);
+            var pendingFlags = PendingIntentFlags.UpdateCurrent;
+            if (OperatingSystem.IsAndroidVersionAtLeast(23))
+                pendingFlags |= PendingIntentFlags.Immutable;
+
+            pendingIntent = PendingIntent.GetActivity(
+                context,
+                0,
+                launchIntent,
+                pendingFlags);
+        }
+
+        var builder = new NotificationCompat.Builder(context, AndroidChannelId);
+        var icon = context.Resources?.GetIdentifier(
+            "vidra_notification",
+            "drawable",
+            context.PackageName) ?? 0;
+        if (icon == 0)
+            icon = Android.Resource.Drawable.IcDialogInfo;
+        builder.SetContentTitle(args.Title);
+        builder.SetContentText(args.Body ?? string.Empty);
+        builder.SetSmallIcon(icon);
+        builder.SetAutoCancel(true);
+
+        if (pendingIntent is not null)
+            builder.SetContentIntent(pendingIntent);
+
+        manager.Notify(Guid.NewGuid().GetHashCode(), builder.Build());
+        builder.Dispose();
+        return true;
+    }
+
+    private static async Task<bool> RequestAndroidPermissionAsync(CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (!OperatingSystem.IsAndroidVersionAtLeast(33))
+            return true;
+
+        var status = await Permissions.CheckStatusAsync<Permissions.PostNotifications>();
+        if (status == PermissionStatus.Granted)
+            return true;
+
+        status = await MainThread.InvokeOnMainThreadAsync(
+            Permissions.RequestAsync<Permissions.PostNotifications>);
+        ct.ThrowIfCancellationRequested();
+        return status == PermissionStatus.Granted;
+    }
+
+    [SupportedOSPlatform("android26.0")]
+    private static void EnsureAndroidChannel(NotificationManager manager)
+    {
+        var channel = new NotificationChannel(
+            AndroidChannelId,
+            "General",
+            NotificationImportance.Default)
+        {
+            Description = "Notifications from this application",
+        };
+        manager.CreateNotificationChannel(channel);
+        channel.Dispose();
+    }
+#endif
 
 #if WINDOWS
     private static readonly object WindowsRegistrationLock = new();

@@ -68,6 +68,15 @@ The app is launched as its inner binary (`Contents/MacOS/<exe>`, or the `.exe`
 directly) rather than via `open`, so stdout is captured and the process can be
 waited on.
 
+The Android emulator job uses `ota-main-page.cs.in` and the Android mode of
+`ota-e2e.mjs`. It installs the signed APK, drives launch settings through intent
+extras, reads proofs with `run-as`, and covers the native message channel plus
+bundle promotion, contract mismatch, corruption, probation, and rollback.
+The job's `VIDRA_ANDROID_DEBUGGABLE=1` is a test-only CLI hook: it marks that
+Release-shaped package debuggable and defines only
+`VIDRA_ANDROID_TEST_RUNTIME`, so the emulator can reach the local HTTP feed
+without replacing the project's complete `DefineConstants` set.
+
 ## Reproducing locally
 
 ```bash

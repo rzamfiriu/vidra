@@ -24,6 +24,7 @@ import {
   STEP_LABEL_WIDTH as LABEL_WIDTH,
   value,
 } from "@vidra-dev/cli-shared/theme";
+import { verifyAndroidPackage } from "../targets/android.js";
 
 /**
  * `vidra verify [artifact]` — inspect a built artifact and report whether it is
@@ -63,10 +64,13 @@ export const verifyCommand = async (argv: string[]): Promise<void> => {
   console.log(kv("artifact", artifact));
   console.log();
 
+  const kind = artifactKind(artifact);
   const failures =
-    artifactKind(artifact) === "macos"
+    kind === "macos"
       ? verifyMacArtifact(artifact)
-      : verifyWindowsArtifact(artifact);
+      : kind === "android"
+        ? verifyAndroidArtifact(artifact)
+        : verifyWindowsArtifact(artifact);
 
   console.log();
   if (failures.length > 0) {
@@ -88,9 +92,23 @@ export const verifyCommand = async (argv: string[]): Promise<void> => {
  * looking for an `.exe` inside a macOS bundle. Only a directory that isn't a
  * `.app` — a Windows publish folder — falls through.
  */
-export const artifactKind = (artifact: string): "macos" | "windows" => {
+export const artifactKind = (artifact: string): "macos" | "windows" | "android" => {
   if (artifact.endsWith(".dmg") || artifact.endsWith(".app")) return "macos";
+  if (artifact.endsWith(".apk") || artifact.endsWith(".aab")) return "android";
   return "windows";
+};
+
+const verifyAndroidArtifact = (artifact: string): string[] => {
+  const result = verifyAndroidPackage(artifact);
+  report(
+    result.ok,
+    "android signature",
+    result.ok
+      ? `${result.tool} verification passed`
+      : `${result.tool} verification failed`,
+    result.output,
+  );
+  return result.ok ? [] : ["android signature"];
 };
 
 const verifyMacArtifact = (artifact: string): string[] => {
@@ -229,10 +247,16 @@ const discoverArtifact = (): string | null => {
   const dist = path.join(project.root, "dist");
   if (!fs.existsSync(dist)) return null;
 
-  const wanted = detectPlatform() === "windows" ? ".zip" : ".dmg";
+  const platform = detectPlatform();
+  const wanted =
+    platform === "windows"
+      ? [".zip"]
+      : platform === "android"
+        ? [".aab", ".apk"]
+        : [".dmg"];
   const candidates = fs
     .readdirSync(dist)
-    .filter((f) => f.endsWith(wanted))
+    .filter((file) => wanted.some((extension) => file.endsWith(extension)))
     .map((f) => path.join(dist, f))
     .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
 

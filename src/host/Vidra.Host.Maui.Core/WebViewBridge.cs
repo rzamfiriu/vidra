@@ -15,7 +15,8 @@ public sealed partial class WebViewBridge : IJsCallbackChannel, IUnsafeJsCallbac
     /// <summary>
     /// Name of the native message channel. JS posts to
     /// <c>window.webkit.messageHandlers.vidra</c> (WKWebView) or
-    /// <c>window.chrome.webview</c> (WebView2); see the platform partials.
+    /// <c>window.chrome.webview</c> (WebView2), or
+    /// <c>window.vidra</c> (Android WebView); see the platform partials.
     /// Kept in sync with <c>NATIVE_CHANNEL</c> in the JS SDK transport.
     /// </summary>
     private const string ChannelName = "vidra";
@@ -143,6 +144,22 @@ public sealed partial class WebViewBridge : IJsCallbackChannel, IUnsafeJsCallbac
 
     private async void OnNavigated(object? sender, WebNavigatedEventArgs e)
     {
+#if ANDROID
+        if (!_androidNativeChannelAvailable)
+        {
+            try
+            {
+                await PushToJsAsync(
+                    "document.body.innerHTML='<main style=\"font-family:sans-serif;padding:2rem\"><h1>Android System WebView is outdated</h1><p>Update it to enable Vidra\\'s secure native bridge.</p></main>'");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to render the Android WebView compatibility diagnostic.");
+            }
+            return;
+        }
+#endif
+
         // Both pushes are guarded, and the watcher starts either way. This is an
         // `async void` event handler, so an escaping exception is an unhandled
         // one; and on Windows the first push is a real thrower —
@@ -220,6 +237,21 @@ public sealed partial class WebViewBridge : IJsCallbackChannel, IUnsafeJsCallbac
 
     private async void OnNavigating(object? sender, WebNavigatingEventArgs e)
     {
+#if ANDROID
+        // Android's supported transport is origin-scoped WebMessageListener.
+        // The scheme fallback cannot identify a subframe's origin, so accepting
+        // it would let embedded remote content invoke granted native methods.
+        // Consequently this path is never Android's bundle-boot proof; the
+        // message listener or SDK initialization probe owns that signal.
+        if (e.Url.StartsWith("vidra://", StringComparison.OrdinalIgnoreCase))
+        {
+            e.Cancel = true;
+            _logger.LogWarning(
+                "Rejected Android custom-scheme bridge traffic; update Android System WebView to use the secure native channel.");
+            return;
+        }
+#endif
+
         if (e.Url.StartsWith("vidra://reverse", StringComparison.OrdinalIgnoreCase))
         {
             e.Cancel = true;

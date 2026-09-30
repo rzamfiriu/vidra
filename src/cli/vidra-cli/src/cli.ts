@@ -20,8 +20,8 @@ const COMMANDS: Record<string, { spec: CommandSpec; run: Handler }> = {
   verify: { spec: VERIFY, run: verifyCommand },
   doctor: {
     spec: DOCTOR,
-    run: async () => {
-      process.exit(await runDoctor());
+    run: async (argv) => {
+      process.exit(await runDoctor(argv));
     },
   },
 };

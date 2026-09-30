@@ -2,7 +2,8 @@
 """Merge per-OS NuGet packages into single multi-TFM packages.
 
 A MAUI library targets a platform-specific TFM that can only be built on its
-native OS (``net10.0-maccatalyst`` on macOS, ``net10.0-windows...`` on Windows).
+native toolchain (``net10.0-maccatalyst`` on macOS,
+``net10.0-windows...`` on Windows, and ``net10.0-android`` on Linux).
 We therefore build/pack each package on each OS, producing per-OS ``.nupkg``
 files that each contain only one platform's ``lib/<tfm>/`` assets. This script
 merges the per-OS packages (matched by file name = ``id.version.nupkg``) into a
@@ -13,7 +14,7 @@ Packages that exist identically on every OS (plain ``net10.0`` libraries) are
 merged into themselves, which is a no-op union.
 
 Usage:
-    merge-nupkgs.py --inputs pkg-macos pkg-windows --output merged
+    merge-nupkgs.py --inputs pkg-macos pkg-windows pkg-android --output merged
 """
 
 from __future__ import annotations

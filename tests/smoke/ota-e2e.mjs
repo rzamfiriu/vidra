@@ -1,4 +1,4 @@
-// End-to-end proof for over-the-air bundle updates (macOS + Windows).
+// End-to-end proof for over-the-air bundle updates (macOS, Windows + Android).
 //
 // Serves a real feed over HTTP and launches the packaged app repeatedly, because
 // every interesting property of an update system is a property of a *sequence*
@@ -19,6 +19,8 @@
 // Usage:
 //   node ota-e2e.mjs --bin <app binary> --project <scaffold root> --cli <cli.js>
 //                    --work <scratch dir> [--port 8099]
+//   node ota-e2e.mjs --android-app-id <package> --project <scaffold root>
+//                    --cli <cli.js> --work <scratch dir> [--port 8099]
 
 import { spawn, spawnSync } from "node:child_process";
 import crypto, { createHash } from "node:crypto";
@@ -26,7 +28,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 const args = parseArgs(process.argv.slice(2));
-const bin = required("bin");
+const androidAppId = args["android-app-id"] ?? null;
+const bin = androidAppId ? null : required("bin");
 const project = required("project");
 const cli = required("cli");
 const work = required("work");
@@ -364,6 +367,8 @@ function serveFeed() {
 
 /** Runs the app once and returns the proof it wrote. */
 function launch(name, { timeout = 60 } = {}) {
+  if (androidAppId) return launchAndroid(name, timeout);
+
   const proofPath = path.join(work, `${name}.json`);
   fs.rmSync(proofPath, { force: true });
 
@@ -400,6 +405,131 @@ function launch(name, { timeout = 60 } = {}) {
   return proof;
 }
 
+function launchAndroid(name, timeout) {
+  const relativeProof = `files/vidra-ota-${name}.json`;
+  const deviceProof = `/data/user/0/${androidAppId}/${relativeProof}`;
+  const adb = (...argv) =>
+    spawnSync("adb", argv, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+
+  adb("shell", "am", "force-stop", androidAppId);
+  adb("shell", "run-as", androidAppId, "rm", "-f", relativeProof);
+  adb("logcat", "-c");
+
+  console.log(`\n=================== launch: ${name} ===================`);
+  const component = androidLauncherComponent(adb);
+  console.log(`    activity ${component}`);
+  const started = adb(
+    "shell",
+    "am",
+    "start",
+    "-n",
+    component,
+    "-a",
+    "android.intent.action.MAIN",
+    "-c",
+    "android.intent.category.LAUNCHER",
+    "--es",
+    "VIDRA_OTA_PROOF",
+    deviceProof,
+    "--es",
+    "VIDRA_OTA_TIMEOUT",
+    String(timeout),
+    "--es",
+    "VIDRA_UPDATE_STARTUP_DELAY",
+    "1",
+  );
+  if ((started.status ?? 1) !== 0) {
+    const detail = adbText(started) || started.error?.message || "no output";
+    const excerpt = androidLogExcerpt(adb("logcat", "-d").stdout ?? "");
+    throw new Error(
+      `launch ${name} failed (exit=${started.status}): ${detail}` +
+        (excerpt ? `\n${excerpt}` : ""),
+    );
+  }
+
+  const deadline = Date.now() + (timeout + 45) * 1000;
+  let proofText = "";
+  while (Date.now() < deadline) {
+    const proof = adb("shell", "run-as", androidAppId, "cat", relativeProof);
+    if (proof.status === 0 && proof.stdout.trim()) {
+      proofText = proof.stdout;
+      break;
+    }
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
+  }
+
+  const output = adb("logcat", "-d").stdout ?? "";
+  if (!proofText) {
+    const excerpt = androidLogExcerpt(output);
+    if (excerpt) {
+      for (const line of excerpt.split("\n")) console.log(`    ${line}`);
+    }
+    throw new Error(
+      `launch ${name} wrote no Android proof` + (excerpt ? `\n${excerpt}` : ""),
+    );
+  }
+
+  for (const line of output.split(/\r?\n/)) {
+    if (line.includes("[vidra]") || line.toLowerCase().includes("error")) {
+      console.log(`    ${line}`);
+    }
+  }
+
+  const proof = JSON.parse(proofText);
+  proof.output = output;
+  console.log(
+    `    marker=${proof.marker} current=${proof.currentVersion} ` +
+      `pending=${proof.pendingVersion} counter=${proof.counter}`,
+  );
+  return proof;
+}
+
+function androidLauncherComponent(adb) {
+  const resolved = adb(
+    "shell",
+    "cmd",
+    "package",
+    "resolve-activity",
+    "--brief",
+    "-a",
+    "android.intent.action.MAIN",
+    "-c",
+    "android.intent.category.LAUNCHER",
+    "-p",
+    androidAppId,
+  );
+  const component = (resolved.stdout ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => /^[a-zA-Z0-9._]+\/[a-zA-Z0-9._$]+$/.test(line));
+  if (component) return component;
+
+  const installed = adb("shell", "pm", "path", androidAppId);
+  throw new Error(
+    `no launcher activity for ${androidAppId} (resolve exit=${resolved.status}): ` +
+      `${adbText(resolved) || "no output"}; ` +
+      `pm path (exit=${installed.status}): ${adbText(installed) || "no output"}`,
+  );
+}
+
+function adbText(result) {
+  return `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
+}
+
+function androidLogExcerpt(log) {
+  const lines = log.split(/\r?\n/).filter((line) => {
+    const lower = line.toLowerCase();
+    return (
+      line.includes("[vidra]")
+      || lower.includes("error")
+      || lower.includes("fatal")
+      || lower.includes("exception")
+      || lower.includes("monodroid")
+    );
+  });
+  return lines.slice(-40).join("\n");
+}
+
 function expect(actual, expected, what) {
   const normalized = actual === "undefined" ? "undefined" : actual;
   if (normalized === expected) {
@@ -422,12 +552,19 @@ function expectLog(proof, needle, what) {
 }
 
 function expectBridge(proof, what = "the bridge completed a round-trip") {
-  if (proof.counter === 1) {
+  if (
+    proof.counter === 1
+    && proof.nativeCallProof === "true"
+    && proof.eventProof === "true"
+  ) {
     console.log(`    ✓ ${what}`);
     return;
   }
   failures++;
-  console.log(`::error::${what}: counter=${JSON.stringify(proof.counter)} error=${proof.bridgeError}`);
+  console.log(
+    `::error::${what}: counter=${JSON.stringify(proof.counter)} ` +
+      `native=${proof.nativeCallProof} event=${proof.eventProof} error=${proof.bridgeError}`,
+  );
 }
 
 function run(command, argv, cwd) {

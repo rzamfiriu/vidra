@@ -10,9 +10,9 @@ public sealed partial class AppWindowService
         return new WindowSupport(
             Platform: DeviceInfo.Current.Platform.ToString().ToLowerInvariant(),
             GetCurrent: true,
-            Configure: true,
-            SetTitle: true,
-            SetSize: true,
+            Configure: false,
+            SetTitle: false,
+            SetSize: false,
             Center: false,
             Maximize: false,
             Minimize: false,

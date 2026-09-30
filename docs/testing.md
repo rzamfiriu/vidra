@@ -44,6 +44,7 @@ We follow a pyramid:
 | Smoke       | Dogfood host build leaves the committed built-in contracts unchanged | `macos-latest` |
 | Smoke       | `vidra build` → signature, hardened runtime + entitlements  | `windows-latest`, `macos-latest` |
 | Smoke       | **Runtime E2E** — launch the packaged app, assert a C#↔JS round-trip | `windows-latest`, `macos-latest` |
+| Smoke       | Android signed APK/AAB + emulator bridge and OTA promotion/rollback | `ubuntu-latest` |
 | Smoke       | **Dev loop** — `vidra dev` starts, Vite serves, the host builds under `dotnet watch` | `macos-latest` |
 | Guard rail  | CLI rejects `--target linux`; `--plan` renders; `doctor` runs | `ubuntu-latest`       |
 
@@ -62,6 +63,13 @@ self-signed, un-notarized build, and is the check that flips green once real
 credentials exist.
 
 ### Running locally
+
+`pack-local.sh` and an unqualified build of a multi-target MAUI project compile
+Android alongside the host's desktop TFM. Even on macOS or Windows, those
+commands require the Android workload, JDK 17, and Android SDK. Target-specific
+`vidra build --target macos|windows` remains desktop-only. Run
+`vidra doctor --target android` before a full local pack to check the additional
+toolchain.
 
 ```bash
 # C# unit + contract + codegen
@@ -96,6 +104,12 @@ bash tests/ci/launch-macos-app.sh      dist/MyApp-0.1.0-macos.dmg   # macOS
 # Dev loop: `vidra dev` + the C# reload-on-save loop (macOS)
 bash tests/ci/dev-loop-smoke.sh <app-dir> <path/to/cli.js> macos
 ```
+
+Android release checks should additionally cover notification permission on API
+33+, rotation without WebView recreation, background/resume, hardware back
+navigation, picker files copied into app-scoped cache, and web-bundle
+promotion/rollback across an app upgrade. `appWindow.getSupport()` must report
+only `getCurrent` on Android.
 
 ### Updating code-gen snapshots
 

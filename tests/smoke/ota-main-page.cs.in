@@ -17,7 +17,7 @@ public class MainPage : VidraPage
 {
     public MainPage()
     {
-        var proofPath = Environment.GetEnvironmentVariable("VIDRA_OTA_PROOF");
+        var proofPath = VidraRuntimeSettings.Get("VIDRA_OTA_PROOF");
         if (string.IsNullOrEmpty(proofPath))
             return;
 
@@ -32,6 +32,9 @@ public class MainPage : VidraPage
         string? marker = null;
         int? counter = null;
         string? bridgeError = null;
+        string? nativeCallProof = null;
+        string? eventProof = null;
+        var eventSent = false;
 
         // Poll rather than sleeping a fixed time: the page has to load, the SDK
         // has to boot, and the background update check has to finish, and none of
@@ -41,6 +44,8 @@ public class MainPage : VidraPage
             await Task.Delay(TimeSpan.FromSeconds(1));
 
             marker = Normalize(await EvaluateAsync("String(window.__vidraBundleMarker)"));
+            nativeCallProof = Normalize(
+                await EvaluateAsync("String(window.__vidraNativeCallProof === true)"));
 
             if (counter is null)
             {
@@ -55,12 +60,25 @@ public class MainPage : VidraPage
                 }
             }
 
+            if (counter is not null && !eventSent)
+            {
+                await Bridge.SendEventAsync(
+                    RuntimeEvents.HotReloaded,
+                    new HotReloadedPayload(["Vidra.OtaProof"]));
+                eventSent = true;
+            }
+            eventProof = Normalize(
+                await EvaluateAsync("String(window.__vidraEventProof === true)"));
+
             // Done as soon as the check has reported *something* — staged, refused,
             // nothing to do. Waiting for a pending version instead means every
             // negative case (a refused signature, an incompatible bundle) sits
             // here until the deadline, which is where this test spent most of
             // its ten minutes.
-            if (updates?.LastCheck is not null && counter is not null)
+            if (updates?.LastCheck is not null
+                && counter is not null
+                && nativeCallProof == "true"
+                && eventProof == "true")
                 break;
         }
 
@@ -75,6 +93,8 @@ public class MainPage : VidraPage
         Append(json, "coreFingerprint", Fingerprint(BridgeManifestScope.Core));
         Append(json, "appFingerprint", Fingerprint(BridgeManifestScope.App));
         Append(json, "bridgeError", bridgeError);
+        Append(json, "nativeCallProof", nativeCallProof);
+        Append(json, "eventProof", eventProof);
         json.Append(",\n  \"counter\": ").Append(counter?.ToString() ?? "null");
         json.Append("\n}\n");
 
@@ -112,7 +132,7 @@ public class MainPage : VidraPage
     }
 
     private static int Seconds(string name, int fallback)
-        => int.TryParse(Environment.GetEnvironmentVariable(name), out var value) ? value : fallback;
+        => int.TryParse(VidraRuntimeSettings.Get(name), out var value) ? value : fallback;
 
     /// <summary>Platforms disagree about whether a JS string comes back quoted.</summary>
     private static string? Normalize(string? value)

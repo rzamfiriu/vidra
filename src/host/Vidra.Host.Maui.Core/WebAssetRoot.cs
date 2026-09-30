@@ -44,7 +44,7 @@ public static class WebAssetRoot
     {
         // The environment variable outranks the resolver so a developer or a test
         // can pin a directory without going through an update at all.
-        var fromEnvironment = Environment.GetEnvironmentVariable(EnvironmentVariable);
+        var fromEnvironment = VidraRuntimeSettings.Get(EnvironmentVariable);
         if (!string.IsNullOrWhiteSpace(fromEnvironment))
             return Validate(fromEnvironment, EnvironmentVariable);
 
@@ -82,7 +82,7 @@ public static class WebAssetRoot
     /// <summary>True when the Windows leg should serve the root over file://.</summary>
     internal static bool PreferFileUrlOnWindows()
         => string.Equals(
-            Environment.GetEnvironmentVariable(WindowsModeEnvironmentVariable),
+            VidraRuntimeSettings.Get(WindowsModeEnvironmentVariable),
             "file",
             StringComparison.OrdinalIgnoreCase);
 

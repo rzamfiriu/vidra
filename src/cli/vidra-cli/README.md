@@ -35,8 +35,14 @@ The scaffolded app wires these to `npm run dev`, `npm run build` and
 - .NET MAUI workload: `dotnet workload install maui`
 - Node.js 22 or newer
 - Xcode for macOS builds
+- JDK 17 and the Android SDK for Android builds
 
-Windows targets must be built on Windows.
+Windows targets must be built on Windows. Android targets can be built on
+Windows, macOS, or Linux.
+
+`vidra dev --target android` prefers `adb reverse`; when unavailable it uses
+`10.0.2.2` for emulators or a LAN address for physical devices. Override
+automatic LAN selection with `VIDRA_ANDROID_HOST`.
 
 ## License
 

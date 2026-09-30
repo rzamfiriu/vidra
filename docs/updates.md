@@ -26,5 +26,12 @@ npx vidra build --app   # installable app only
 Run `npx vidra updates` to inspect the configuration and
 `npx vidra build --help` for all release options.
 
+On Android, configure `feed.web` only. Vidra's signed WebView bundle OTA remains
+available, while Google Play owns APK/AAB updates; Velopack is not included in
+the Android app. Google Play's
+[Device and Network Abuse policy](https://support.google.com/googleplay/android-developer/answer/9888379)
+exempts code running in an interpreter such as a WebView from its downloaded
+executable-code restriction, subject to the rest of the Play policies.
+
 > Older `vidra bundle` and `--native-update` examples have been replaced by
 > `vidra build --web` and `vidra build --app`.

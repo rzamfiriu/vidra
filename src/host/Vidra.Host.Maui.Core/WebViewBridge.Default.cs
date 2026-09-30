@@ -1,4 +1,4 @@
-#if !WINDOWS && !IOS && !MACCATALYST
+#if !WINDOWS && !IOS && !MACCATALYST && !ANDROID
 namespace Vidra.Hosting;
 
 public sealed partial class WebViewBridge

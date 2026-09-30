@@ -13,7 +13,8 @@ export interface Transport {
 /**
  * The script-message handler name registered by the native host. JS posts to
  * `window.webkit.messageHandlers[NATIVE_CHANNEL]` (WKWebView) or, on Windows,
- * to `window.chrome.webview` (WebView2).
+ * to `window.chrome.webview` (WebView2), or directly to
+ * `window[NATIVE_CHANNEL]` (Android WebView).
  */
 export const NATIVE_CHANNEL = "vidra";
 
@@ -37,11 +38,18 @@ const windowsChannel = (): NativePoster | undefined => {
   return webview && typeof webview.postMessage === "function" ? webview : undefined;
 };
 
-/** True when a first-class native message channel (WKWebView or WebView2) is
+const androidChannel = (): NativePoster | undefined => {
+  const bridge = (globalThis as any)?.[NATIVE_CHANNEL];
+  return bridge && typeof bridge.postMessage === "function" ? bridge : undefined;
+};
+
+/** True when a first-class native message channel is
  * available. Preferred over the custom-scheme transport because it has no URL
  * length limit, no per-message iframe, and is binary-safe. */
 export const hasNativeMessageChannel = (): boolean =>
-  appleChannel() !== undefined || windowsChannel() !== undefined;
+  appleChannel() !== undefined
+  || windowsChannel() !== undefined
+  || androidChannel() !== undefined;
 
 /**
  * Transport that uses the platform's native message channel:
@@ -49,6 +57,8 @@ export const hasNativeMessageChannel = (): boolean =>
  *   handled by a `WKScriptMessageHandler` on the C# side.
  * - Windows (WebView2): `window.chrome.webview.postMessage(...)` handled by
  *   `CoreWebView2.WebMessageReceived` on the C# side.
+ * - Android: `window.vidra.postMessage(...)` handled by an
+ *   origin-scoped AndroidX WebKit message listener on the C# side.
  *
  * Unlike {@link CustomSchemeTransport}, payloads are not URL-encoded into a
  * navigation, so large messages (e.g. file contents) are not truncated.
@@ -56,10 +66,13 @@ export const hasNativeMessageChannel = (): boolean =>
 export class NativeMessageTransport implements Transport {
   private readonly channel: NativePoster;
 
-  constructor(channel: NativePoster | undefined = appleChannel() ?? windowsChannel()) {
+  constructor(
+    channel: NativePoster | undefined =
+      appleChannel() ?? windowsChannel() ?? androidChannel(),
+  ) {
     if (!channel) {
       throw new Error(
-        "[vidra] No native message channel is available (expected WKWebView or WebView2).",
+        "[vidra] No native message channel is available (expected WKWebView, WebView2, or Android WebView).",
       );
     }
     this.channel = channel;

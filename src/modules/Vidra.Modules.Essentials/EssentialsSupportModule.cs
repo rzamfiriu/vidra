@@ -1,5 +1,6 @@
 using Microsoft.Maui.ApplicationModel.Communication;
 using Microsoft.Maui.Devices;
+using Microsoft.Maui.Media;
 using Vidra.Bridge;
 
 namespace Vidra.Modules.Essentials;
@@ -12,11 +13,25 @@ namespace Vidra.Modules.Essentials;
 public sealed class EssentialsSupportModule : BridgeModuleBase
 {
     [BridgeMethod("getSupport")]
-    public Task<EssentialsSupport> GetSupportAsync(CancellationToken ct)
+    public async Task<EssentialsSupport> GetSupportAsync(CancellationToken ct)
     {
+        ct.ThrowIfCancellationRequested();
+        var textToSpeechSupported = true;
+#if ANDROID
+        try
+        {
+            textToSpeechSupported = (await TextToSpeech.Default.GetLocalesAsync()).Any();
+        }
+        catch
+        {
+            textToSpeechSupported = false;
+        }
+#endif
+
         var support = EssentialsSupportFactory.Create(
             DeviceInfo.Current.Platform.ToString(),
-            Email.Default.IsComposeSupported);
-        return Task.FromResult(support);
+            Email.Default.IsComposeSupported,
+            textToSpeechSupported);
+        return support;
     }
 }

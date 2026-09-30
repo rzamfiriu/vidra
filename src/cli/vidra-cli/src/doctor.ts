@@ -21,10 +21,14 @@ import { run, type RunResult } from "@vidra-dev/cli-shared/exec";
 import {
   checkDotnetSdk,
   DOTNET,
-  outputMentionsMaui,
+  outputMentionsMauiTarget,
   type Requirement,
   type RequirementStatus,
 } from "@vidra-dev/cli-shared/dotnet-toolchain";
+import { parseArgs } from "@vidra-dev/cli-shared/utils";
+import { rejectUnknownFlags } from "./help.js";
+import { DOCTOR } from "./commands/specs.js";
+import { resolveAndroidSigningConfig } from "./targets/android.js";
 
 // --- Text scanning helpers ---------------------------------------------------
 
@@ -59,6 +63,7 @@ const MISSING_WORKLOAD_SIGNATURES: readonly RegExp[] = [
   /workloads?\s+must\s+be\s+installed/i,
   /maui-maccatalyst/i,
   /maui-windows/i,
+  /maui-android/i,
   /to\s+install\s+the\s+.*workload/i,
 ];
 
@@ -97,7 +102,10 @@ export const looksLikeXcodeTooOld = (output: string): boolean =>
 
 // --- Environment probes ------------------------------------------------------
 
-const checkMauiWorkload = (workloadList: RunResult | null): Requirement => {
+const checkMauiWorkload = (
+  workloadList: RunResult | null,
+  target: DoctorTarget,
+): Requirement => {
   const name = ".NET MAUI workload";
 
   if (!workloadList) {
@@ -106,14 +114,20 @@ const checkMauiWorkload = (workloadList: RunResult | null): Requirement => {
   if (!workloadList.found) {
     return { name, status: "unknown", detail: "could not query workloads" };
   }
-  if (outputMentionsMaui(workloadList.stdout)) {
+  const hasRequiredWorkload = outputMentionsMauiTarget(
+    workloadList.stdout,
+    target,
+  );
+  if (hasRequiredWorkload) {
     return { name, status: "ok", detail: "installed" };
   }
   return {
     name,
     status: "missing",
     detail: "not installed",
-    fix: "dotnet workload install maui",
+    fix: target === "android"
+      ? "dotnet workload install maui-android"
+      : "dotnet workload install maui",
   };
 };
 
@@ -223,10 +237,20 @@ export const installedMacCatalystPackVersion = (): string | undefined => {
   }
 };
 
-const checkCSharpDevLoop = (workloadList: RunResult | null): Requirement => {
+const checkCSharpDevLoop = (
+  workloadList: RunResult | null,
+  target: DoctorTarget,
+): Requirement => {
   const name = "C# dev loop";
   if (!workloadList) {
     return { name, status: "unknown", detail: "requires the .NET SDK first" };
+  }
+  if (target === "android") {
+    return {
+      name,
+      status: "ok",
+      detail: "C# edits rebuild, reinstall, and relaunch the Android app",
+    };
   }
   if (process.platform !== "darwin") {
     return {
@@ -419,6 +443,77 @@ export const checkVelopack = (required: boolean): Requirement => {
   };
 };
 
+type DoctorTarget = "macos" | "windows" | "android";
+
+const checkAndroidSdk = (): Requirement => {
+  const sdk = process.env.ANDROID_SDK_ROOT ?? process.env.ANDROID_HOME;
+  return sdk && fs.existsSync(sdk)
+    ? { name: "Android SDK", status: "ok", detail: sdk }
+    : {
+        name: "Android SDK",
+        status: "missing",
+        detail: "ANDROID_SDK_ROOT/ANDROID_HOME does not point to an installed SDK",
+        fix: "install Android Studio command-line tools and set ANDROID_SDK_ROOT",
+      };
+};
+
+const checkJdk17 = (): Requirement => {
+  const result = run("java", ["-version"]);
+  const output = `${result.stdout}\n${result.stderr}`;
+  const major = Number(output.match(/version \"(?:1\\.)?(\\d+)/)?.[1]);
+  return result.found && major >= 17
+    ? { name: "JDK", status: "ok", detail: `Java ${major}` }
+    : {
+        name: "JDK",
+        status: "missing",
+        detail: result.found ? "Java 17 or newer is required" : "java not found",
+        fix: "install JDK 17 and set JAVA_HOME",
+      };
+};
+
+const checkAdb = (): Requirement => {
+  const result = run("adb", ["devices"]);
+  if (!result.found) {
+    return {
+      name: "adb",
+      status: "missing",
+      detail: "not found on PATH",
+      fix: "add Android SDK platform-tools to PATH",
+    };
+  }
+  const connected = result.stdout
+    .split(/\r?\n/)
+    .slice(1)
+    .filter((line) => /\sdevice\s*$/.test(line)).length;
+  return {
+    name: "adb",
+    status: connected > 0 ? "ok" : "unknown",
+    detail: connected > 0
+      ? `${connected} device${connected === 1 ? "" : "s"} connected`
+      : "installed; no emulator or device connected",
+  };
+};
+
+const checkAndroidSigning = (): Requirement => {
+  try {
+    const config = resolveAndroidSigningConfig();
+    return config
+      ? { name: "Android signing", status: "ok", detail: `${config.keyAlias} · ${config.keyStore}` }
+      : {
+          name: "Android signing",
+          status: "unknown",
+          detail: "not configured; required only for `vidra build --target android`",
+          fix: "set VIDRA_ANDROID_KEYSTORE, VIDRA_ANDROID_KEY_ALIAS, VIDRA_ANDROID_KEY_PASSWORD, and VIDRA_ANDROID_STORE_PASSWORD",
+        };
+  } catch (error) {
+    return {
+      name: "Android signing",
+      status: "missing",
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
+};
+
 /**
  * What is left to get wrong once a feed URL is the only switch.
  *
@@ -437,6 +532,7 @@ export const checkVelopack = (required: boolean): Requirement => {
  */
 export const diagnoseUpdateConfiguration = (input: {
   config: UpdateConfig | null;
+  target?: DoctorTarget;
   /** Source of `MauiProgram.cs`, or null when it could not be read. */
   mauiProgram: string | null;
   /** Source of the host `.csproj`, or null when it could not be read. */
@@ -494,6 +590,14 @@ export const diagnoseUpdateConfiguration = (input: {
   }
 
   if (feeds.app) {
+    if (input.target === "android") {
+      found.push({
+        name: "Android app updates",
+        status: "missing",
+        detail: "whole-app feeds are unsupported on Android; Google Play owns app updates",
+        fix: "configure updates.feed.web only for Android builds",
+      });
+    } else {
     if (mauiProgram !== null && !mauiProgram.includes(".UseVidraNativeUpdates(")) {
       found.push({
         name: "Native updates wired up",
@@ -523,6 +627,7 @@ export const diagnoseUpdateConfiguration = (input: {
           fix: "VelopackApp.Build().UseVidraLocator().Run(); as the first line of Main",
         });
       }
+    }
     }
   }
 
@@ -568,7 +673,10 @@ const publishedFeeds = (projectRoot: string): string[] => {
 };
 
 /** Reads what {@link diagnoseUpdateConfiguration} needs off disk. */
-const inspectUpdateConfiguration = (config: UpdateConfig | null): Requirement[] => {
+const inspectUpdateConfiguration = (
+  config: UpdateConfig | null,
+  target?: DoctorTarget,
+): Requirement[] => {
   const project = tryDetectProject(process.cwd());
   if (!project) return [];
 
@@ -595,9 +703,12 @@ const inspectUpdateConfiguration = (config: UpdateConfig | null): Requirement[] 
   }
 
   return [
-    ...(nativeWanted || resolveVpk() ? [checkVelopack(nativeWanted)] : []),
+    ...(target !== "android" && (nativeWanted || resolveVpk())
+      ? [checkVelopack(nativeWanted)]
+      : []),
     ...diagnoseUpdateConfiguration({
       config,
+      target,
       mauiProgram: readIfPresent(path.join(project.hostDir, "MauiProgram.cs")),
       csproj: readIfPresent(project.csprojPath),
       entryPoints,
@@ -617,27 +728,43 @@ const readIfPresent = (file: string): string | null => {
 // --- Reporting ---------------------------------------------------------------
 
 export const collectRequirements = (
-  opts: { includeXcode?: boolean; updateConfig?: UpdateConfig | null } = {},
+  opts: {
+    includeXcode?: boolean;
+    updateConfig?: UpdateConfig | null;
+    target?: DoctorTarget;
+  } = {},
 ): Requirement[] => {
+  const platformTarget = opts.target
+    ?? (process.platform === "darwin"
+      ? "macos"
+      : process.platform === "win32"
+        ? "windows"
+        : "android");
   const dotnet = checkDotnetSdk();
   const workloadList =
     dotnet.status === "ok" ? run(DOTNET, ["workload", "list"]) : null;
   const reqs: Requirement[] = [
     dotnet,
-    checkMauiWorkload(workloadList),
-    checkCSharpDevLoop(workloadList),
+    checkMauiWorkload(workloadList, platformTarget),
+    checkCSharpDevLoop(workloadList, platformTarget),
   ];
-  if (opts.includeXcode ?? process.platform === "darwin") {
+  if (opts.includeXcode ?? platformTarget === "macos") {
     reqs.push(checkXcode());
   }
-  if (process.platform === "darwin") {
+  if (platformTarget === "macos") {
     reqs.push(checkMacSigningIdentity(), checkNotarization());
   }
-  if (process.platform === "win32") {
+  if (platformTarget === "windows") {
     reqs.push(checkWindowsSigning(), checkWebView2Runtime());
   }
+  if (platformTarget === "android") {
+    reqs.push(checkAndroidSdk(), checkJdk17(), checkAdb(), checkAndroidSigning());
+  }
 
-  const updateIssues = inspectUpdateConfiguration(opts.updateConfig ?? null);
+  const updateIssues = inspectUpdateConfiguration(
+    opts.updateConfig ?? null,
+    platformTarget,
+  );
   if (updateIssues.length > 0) {
     reqs.push(...updateIssues);
   }
@@ -669,7 +796,21 @@ export const printRequirements = (reqs: Requirement[]): void => {
 };
 
 /** Implements the `vidra doctor` command. Returns a process exit code. */
-export const runDoctor = async (): Promise<number> => {
+export const runDoctor = async (argv: string[] = []): Promise<number> => {
+  const args = parseArgs(["_", "_", ...argv]);
+  if (rejectUnknownFlags(DOCTOR, args)) return 1;
+  const defaultTarget: DoctorTarget =
+    process.platform === "darwin"
+      ? "macos"
+      : process.platform === "win32"
+        ? "windows"
+        : "android";
+  const target = ((args.target as string | undefined) ?? defaultTarget) as DoctorTarget;
+  if (!["macos", "windows", "android"].includes(target)) {
+    console.error(row({ glyph: "error", detail: dim(`unsupported target: ${target}`) }));
+    return 1;
+  }
+
   console.log();
   console.log(`  ${lime("vidra")} ${value("doctor")}`);
   console.log();
@@ -681,14 +822,10 @@ export const runDoctor = async (): Promise<number> => {
     ? (await loadVidraConfig(project.root, {
         command: "doctor",
         mode: "development",
-        target: process.platform === "darwin"
-          ? "macos"
-          : process.platform === "win32"
-            ? "windows"
-            : null,
+        target,
       })).updates
     : null;
-  const reqs = collectRequirements({ updateConfig });
+  const reqs = collectRequirements({ updateConfig, target });
   printRequirements(reqs);
   console.log();
 

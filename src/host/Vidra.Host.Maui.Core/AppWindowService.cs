@@ -42,6 +42,7 @@ public sealed partial class AppWindowService : IAppWindowService
 
         return MainThread.InvokeOnMainThreadAsync(() =>
         {
+            EnsureSupported(BuildSupportSnapshot().Center, "Window centering");
             var window = GetTrackedWindow();
             return SnapshotWindow(window);
         });
@@ -53,6 +54,7 @@ public sealed partial class AppWindowService : IAppWindowService
 
         return MainThread.InvokeOnMainThreadAsync(() =>
         {
+            EnsureSupported(BuildSupportSnapshot().Configure, "Window configuration");
             var window = GetTrackedWindow();
 
             if (args.Title is not null)
@@ -76,6 +78,7 @@ public sealed partial class AppWindowService : IAppWindowService
 
         return MainThread.InvokeOnMainThreadAsync(() =>
         {
+            EnsureSupported(BuildSupportSnapshot().SetTitle, "Setting the window title");
             var window = GetTrackedWindow();
             window.Title = title;
             return SnapshotWindow(window);
@@ -88,6 +91,7 @@ public sealed partial class AppWindowService : IAppWindowService
 
         return MainThread.InvokeOnMainThreadAsync(() =>
         {
+            EnsureSupported(BuildSupportSnapshot().SetSize, "Setting the window size");
             var window = GetTrackedWindow();
             window.Width = width;
             window.Height = height;
@@ -113,6 +117,7 @@ public sealed partial class AppWindowService : IAppWindowService
 
         var info = await MainThread.InvokeOnMainThreadAsync(() =>
         {
+            EnsureSupported(BuildSupportSnapshot().Maximize, "Window maximize");
             var window = GetTrackedWindow();
             _lastKnownState = WindowState.Maximized;
             MaximizePlatformWindow(window);
@@ -129,6 +134,7 @@ public sealed partial class AppWindowService : IAppWindowService
 
         var info = await MainThread.InvokeOnMainThreadAsync(() =>
         {
+            EnsureSupported(BuildSupportSnapshot().Minimize, "Window minimize");
             var window = GetTrackedWindow();
             _lastKnownState = WindowState.Minimized;
             MinimizePlatformWindow(window);
@@ -145,6 +151,7 @@ public sealed partial class AppWindowService : IAppWindowService
 
         var info = await MainThread.InvokeOnMainThreadAsync(() =>
         {
+            EnsureSupported(BuildSupportSnapshot().Restore, "Window restore");
             var window = GetTrackedWindow();
             _lastKnownState = WindowState.Restored;
             RestorePlatformWindow(window);
@@ -161,6 +168,7 @@ public sealed partial class AppWindowService : IAppWindowService
 
         var info = await MainThread.InvokeOnMainThreadAsync(() =>
         {
+            EnsureSupported(BuildSupportSnapshot().SetFullscreen, "Fullscreen");
             var window = GetTrackedWindow();
             _lastKnownState = enabled ? WindowState.Fullscreen : WindowState.Restored;
             SetFullscreenPlatformWindow(window, enabled);
@@ -239,6 +247,12 @@ public sealed partial class AppWindowService : IAppWindowService
             return fallback > 0 ? fallback : 0;
 
         return value;
+    }
+
+    private static void EnsureSupported(bool supported, string operation)
+    {
+        if (!supported)
+            throw new PlatformNotSupportedException($"{operation} is not supported on this platform.");
     }
 
     private Task EmitProgrammaticStateChangeAsync(WindowInfo info, CancellationToken ct)

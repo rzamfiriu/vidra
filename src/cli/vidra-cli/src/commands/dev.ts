@@ -1,4 +1,5 @@
 import path from "node:path";
+import os from "node:os";
 import fs from "fs-extra";
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { request } from "node:http";
@@ -63,6 +64,10 @@ const TARGETS = {
     name: "windows",
     framework: "net10.0-windows10.0.19041.0",
   },
+  android: {
+    name: "android",
+    framework: "net10.0-android",
+  },
 } as const;
 
 type DevTargetName = keyof typeof TARGETS;
@@ -116,7 +121,10 @@ const startSession = async (
 
   // Fail fast (before starting Vite) if the MAUI workload the host build needs
   // isn't installed; offers to install it when the session is interactive.
-  if (!(await ensureMauiWorkload({ csprojPath: project.csprojPath }))) {
+  if (!(await ensureMauiWorkload({
+    csprojPath: project.csprojPath,
+    target: target.name,
+  }))) {
     process.exit(1);
   }
 
@@ -215,8 +223,8 @@ export type WatchStrategy = "delta" | "rebuild";
  * The initial strategy. Always `"delta"`: a session only moves to `"rebuild"`
  * by observing its own delta channel die, never by predicting that it will.
  */
-export const watchStrategyFor = (_targetName: DevTargetName): WatchStrategy =>
-  "delta";
+export const watchStrategyFor = (targetName: DevTargetName): WatchStrategy =>
+  targetName === "android" ? "rebuild" : "delta";
 
 /**
  * `dotnet watch` gives up on a process with this line, after an update batch
@@ -281,13 +289,17 @@ export const dotnetWatchEnv = (devUrl: string): Record<string, string> => ({
   DOTNET_CLI_UI_LANGUAGE: "en",
 });
 
-export const buildViteArgs = (devUrl: string): string[] => [
+export const buildViteArgs = (
+  devUrl: string,
+  exposeNetwork = false,
+): string[] => [
   "run",
   "dev",
   "--",
   "--port",
   new URL(devUrl).port,
   "--strictPort",
+  ...(exposeNetwork ? ["--host", "0.0.0.0"] : []),
 ];
 
 export type WatchLineEvent =
@@ -457,6 +469,7 @@ class DevSession {
   private restartingWatch = false;
   private watchRestartPending = false;
   private fellBackToClassic = false;
+  private androidSerial: string | undefined;
 
   private endSession: () => void = () => {};
   private readonly sessionDone = new Promise<void>((resolve) => {
@@ -587,11 +600,15 @@ class DevSession {
     // Node refuses to `spawn` `.cmd`/`.bat` files directly (it throws
     // `spawn EINVAL`) unless they're run through a shell. `taskkill /T` in
     // killChild already tears down the wrapping cmd.exe and its children.
-    const vite = spawn(NPM_COMMAND, buildViteArgs(this.viteUrl), {
+    const vite = spawn(
+      NPM_COMMAND,
+      buildViteArgs(this.viteUrl, this.target.name === "android"),
+      {
       cwd: this.project.uiDir,
       stdio: ["ignore", "pipe", "pipe"],
       shell: process.platform === "win32",
-    });
+      },
+    );
     return this.registerChild(vite, "ui", "Vite dev server");
   }
 
@@ -599,9 +616,9 @@ class DevSession {
     if (this.hotReload) {
       return this.launchHostWithWatch();
     }
-    return this.target.name === "macos"
-      ? this.launchMacosHost()
-      : this.launchWindowsHost();
+    if (this.target.name === "macos") return this.launchMacosHost();
+    if (this.target.name === "windows") return this.launchWindowsHost();
+    return this.launchAndroidHost();
   }
 
   // --- dotnet watch launch (C# hot reload) -----------------------------------
@@ -918,7 +935,12 @@ class DevSession {
         // The watcher already built it; go straight to signing and spawning.
         // Readiness is announced by onHostReady when the app says so itself;
         // spawning only means the loop is live.
-        this.hostChild = this.spawnMacosHost({ fatal: false }) ?? undefined;
+        this.hostChild =
+          this.target.name === "macos"
+            ? this.spawnMacosHost({ fatal: false }) ?? undefined
+            : this.target.name === "windows"
+              ? this.launchWindowsHost()
+              : this.launchAndroidHost();
         if (this.hostChild) this.watchReady = true;
       } while (this.relaunchPending && !this.shuttingDown);
     } finally {
@@ -1032,11 +1054,9 @@ class DevSession {
     );
     console.log();
 
-    if (this.target.name === "macos") {
-      this.launchMacosHost();
-    } else {
-      this.launchWindowsHost();
-    }
+    if (this.target.name === "macos") this.launchMacosHost();
+    else if (this.target.name === "windows") this.launchWindowsHost();
+    else this.launchAndroidHost();
   }
 
   // --- classic launch (one build + direct spawn) ------------------------------
@@ -1186,6 +1206,142 @@ class DevSession {
     return this.registerChild(host, "host", path.basename(exe));
   }
 
+  private launchAndroidHost(): ChildProcess {
+    const serial = this.androidSerial ??= resolveAndroidDevice();
+    const applicationId = readAndroidApplicationId(this.project.csprojPath);
+
+    console.log(
+      taggedRow(
+        "active",
+        "host",
+        `${dim("building and installing")} ${value(this.target.framework)} ${dim(`on ${serial}…`)}`,
+      ),
+    );
+
+    try {
+      execFileSync(
+        DOTNET_COMMAND,
+        [
+          "build",
+          "-c",
+          this.buildConfig,
+          "-f",
+          this.target.framework,
+          "-t:Install",
+          `-p:AndroidDeviceSerial=${serial}`,
+          this.project.csprojPath,
+        ],
+        {
+          cwd: this.project.root,
+          stdio: this.verbose ? "inherit" : "pipe",
+        },
+      );
+    } catch (error) {
+      console.error(taggedRow("error", "host", dim("Android build/install failed")));
+      console.error(dim(formatBuildError(error)));
+      process.exit(1);
+    }
+
+    const adb = (...args: string[]): string =>
+      execFileSync("adb", ["-s", serial, ...args], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      }).trim();
+    const tryAdb = (...args: string[]): string => {
+      try {
+        return adb(...args);
+      } catch {
+        return "";
+      }
+    };
+
+    const port = new URL(this.viteUrl).port;
+    let reversed = true;
+    if (port) {
+      try {
+        adb("reverse", `tcp:${port}`, `tcp:${port}`);
+      } catch {
+        reversed = false;
+      }
+    }
+    const deviceDevUrl = selectAndroidDevUrl(
+      serial,
+      port,
+      reversed,
+      resolveAndroidFallbackHost(
+        this.viteUrl,
+        process.env.VIDRA_ANDROID_HOST,
+        localNetworkAddress(),
+      ),
+    );
+    if (!reversed) {
+      console.log(
+        taggedRow(
+          "manual",
+          "host",
+          `${dim("adb reverse unavailable — using")} ${value(deviceDevUrl)}`,
+        ),
+      );
+    }
+
+    adb("logcat", "-c");
+    adb("shell", "am", "force-stop", applicationId);
+    adb(
+      "shell",
+      "am",
+      "start",
+      "-W",
+      "-a",
+      "android.intent.action.MAIN",
+      "-c",
+      "android.intent.category.LAUNCHER",
+      "-p",
+      applicationId,
+      "--es",
+      "VIDRA_DEV_URL",
+      deviceDevUrl,
+    );
+
+    const pid =
+      tryAdb("shell", "pidof", "-s", applicationId)
+      || parseAndroidPid(adb("shell", "ps"), applicationId);
+    if (!pid) {
+      console.error(
+        row({ glyph: "error", detail: dim(`Android app ${applicationId} did not start`) }),
+      );
+      process.exit(1);
+    }
+
+    console.log(
+      taggedRow(
+        "active",
+        "host",
+        `${dim("launched")} ${value(applicationId)} ${dim(`· logcat pid ${pid}`)}`,
+      ),
+    );
+    const androidApi = Number(tryAdb("shell", "getprop", "ro.build.version.sdk"));
+    const logcatArgs = [
+      "-s",
+      serial,
+      "logcat",
+      ...(androidApi >= 24 ? ["--pid", pid] : []),
+    ];
+    if (androidApi < 24) {
+      console.log(
+        taggedRow(
+          "manual",
+          "host",
+          dim("API 21–23: logcat cannot filter by process; showing device-wide logs"),
+        ),
+      );
+    }
+    const logcat = spawn("adb", logcatArgs, {
+      cwd: this.project.root,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    return this.registerChild(logcat, "host", applicationId);
+  }
+
   private registerChild(
     child: ChildProcess,
     tag: TagName,
@@ -1293,6 +1449,25 @@ class DevSession {
     if (this.shuttingDown) return;
     this.shuttingDown = true;
 
+    if (this.target.name === "android" && this.androidSerial) {
+      try {
+        execFileSync(
+          "adb",
+          [
+            "-s",
+            this.androidSerial,
+            "shell",
+            "am",
+            "force-stop",
+            readAndroidApplicationId(this.project.csprojPath),
+          ],
+          { stdio: "ignore" },
+        );
+      } catch {
+        // The device may already be disconnected; child cleanup still proceeds.
+      }
+    }
+
     // Iterate a copy: an exiting child removes itself from `children`.
     const watchChildren = new Set(this.watchChildren);
     const children = [...this.children];
@@ -1306,6 +1481,108 @@ class DevSession {
     });
   }
 }
+
+export const parseAdbDevices = (output: string): string[] =>
+  output
+    .split(/\r?\n/)
+    .slice(1)
+    .map((line) => line.trim().split(/\s+/))
+    .filter((parts) => parts.length >= 2 && parts[1] === "device")
+    .map((parts) => parts[0]);
+
+export const selectAndroidDevUrl = (
+  serial: string,
+  port: string,
+  reverseSucceeded: boolean,
+  lanAddress?: string,
+): string => {
+  if (reverseSucceeded) return `http://127.0.0.1:${port}`;
+  if (serial.startsWith("emulator-")) return `http://10.0.2.2:${port}`;
+  if (lanAddress) return `http://${lanAddress}:${port}`;
+  throw new Error(
+    "adb reverse failed and no LAN address is available; connect the device by USB or set up host networking",
+  );
+};
+
+export const resolveAndroidFallbackHost = (
+  devUrl: string,
+  override?: string,
+  detectedLanAddress?: string,
+): string | undefined => {
+  const explicit = override?.trim();
+  if (explicit) return explicit;
+
+  const configured = new URL(devUrl).hostname;
+  if (!["localhost", "127.0.0.1", "0.0.0.0", "::1"].includes(configured)) {
+    return configured;
+  }
+  return detectedLanAddress;
+};
+
+export const parseAndroidPid = (output: string, applicationId: string): string => {
+  const lines = output.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length < 2) return "";
+  const header = lines[0].split(/\s+/);
+  const pidIndex = header.indexOf("PID");
+  for (const line of lines.slice(1)) {
+    const columns = line.split(/\s+/);
+    if (columns.at(-1) === applicationId) {
+      return columns[pidIndex >= 0 ? pidIndex : 1] ?? "";
+    }
+  }
+  return "";
+};
+
+const localNetworkAddress = (): string | undefined => {
+  for (const addresses of Object.values(os.networkInterfaces())) {
+    for (const address of addresses ?? []) {
+      if (address.family === "IPv4" && !address.internal) return address.address;
+    }
+  }
+  return undefined;
+};
+
+const resolveAndroidDevice = (): string => {
+  const requested = process.env.ANDROID_SERIAL?.trim();
+  let devices: string[];
+  try {
+    devices = parseAdbDevices(
+      execFileSync("adb", ["devices"], { encoding: "utf8" }),
+    );
+  } catch {
+    console.error(row({ glyph: "error", detail: dim("adb is not installed or not on PATH") }));
+    process.exit(1);
+  }
+
+  if (requested) {
+    if (devices.includes(requested)) return requested;
+    console.error(
+      row({ glyph: "error", detail: dim(`ANDROID_SERIAL device is not connected: ${requested}`) }),
+    );
+    process.exit(1);
+  }
+  if (devices.length === 1) return devices[0];
+  if (devices.length === 0) {
+    console.error(row({ glyph: "error", detail: dim("no Android emulator or device is connected") }));
+  } else {
+    console.error(
+      row({
+        glyph: "error",
+        detail: dim(`multiple Android devices are connected — set ANDROID_SERIAL (${devices.join(", ")})`),
+      }),
+    );
+  }
+  process.exit(1);
+};
+
+export const readAndroidApplicationId = (csprojPath: string): string => {
+  const project = fs.readFileSync(csprojPath, "utf8");
+  const applicationId = project.match(/<ApplicationId>([^<]+)<\/ApplicationId>/)?.[1]?.trim();
+  if (!applicationId) {
+    throw new Error(`no <ApplicationId> found in ${csprojPath}`);
+  }
+  return applicationId;
+};
 
 const ensureTargetMatchesHostOs = (targetName: DevTargetName): void => {
   if (targetName === "macos" && process.platform !== "darwin") {

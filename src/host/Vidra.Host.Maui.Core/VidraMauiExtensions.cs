@@ -6,6 +6,9 @@ using Vidra.Modules.Notifications;
 using Vidra.Modules.AppLifecycle;
 using Vidra.Modules.Windowing;
 using Vidra.Modules.Essentials;
+#if ANDROID
+using Microsoft.Maui.LifecycleEvents;
+#endif
 
 namespace Vidra.Hosting;
 
@@ -111,11 +114,27 @@ public static class VidraMauiExtensions
         builder.Services.AddSingleton<IVidraUpdates>(sp => sp.GetRequiredService<VidraUpdateService>());
         builder.Services.AddSingleton<Microsoft.Maui.Hosting.IMauiInitializeService, VidraUpdateStartup>();
 
+#if ANDROID
+        // Intent overrides are applied by MainActivity before base.OnCreate.
+        // Start from MAUI's lifecycle rather than copied app startup code; the
+        // VidraPage call remains an idempotent ordering fallback before its
+        // first navigation.
+        builder.ConfigureLifecycleEvents(events =>
+        {
+            events.AddAndroid(android => android.OnCreate((_, _) =>
+            {
+                IPlatformApplication.Current?.Services
+                    .GetService<VidraUpdateService>()
+                    ?.StartAtLaunch();
+            }));
+        });
+#endif
+
         return builder;
     }
 
     /// <summary>
-    /// Enables WKWebView.Inspectable at runtime so Safari DevTools can attach.
+    /// Enables platform WebView inspection at runtime.
     /// Uses Debugger.IsAttached as a runtime check instead of #if DEBUG,
     /// since this library ships as a Release-built NuGet package.
     /// </summary>
@@ -127,6 +146,10 @@ public static class VidraMauiExtensions
             if (OperatingSystem.IsIOSVersionAtLeast(16, 4) || OperatingSystem.IsMacCatalystVersionAtLeast(16, 4))
                 handler.PlatformView.Inspectable = true;
         });
+#elif ANDROID
+        if ((Android.App.Application.Context.ApplicationInfo?.Flags
+                & Android.Content.PM.ApplicationInfoFlags.Debuggable) != 0)
+            Android.Webkit.WebView.SetWebContentsDebuggingEnabled(true);
 #endif
     }
 }

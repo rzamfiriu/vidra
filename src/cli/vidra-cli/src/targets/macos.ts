@@ -7,7 +7,7 @@ import type { AppMeta, BuildTarget } from "./types.js";
 export const macosTarget: BuildTarget = {
   name: "macos",
   framework: "net10.0-maccatalyst",
-  extraPublishArgs: "-p:CreatePackage=false",
+  extraPublishArgs: ["-p:CreatePackage=false"],
 
   findBundle(publishDir: string, _projectName: string): string | null {
     if (!fs.existsSync(publishDir)) return null;
@@ -23,7 +23,7 @@ export const macosTarget: BuildTarget = {
     appPath: string,
     outputDir: string,
     meta: AppMeta,
-  ): Promise<string> {
+  ): Promise<string[]> {
     const dmgName = `${meta.projectName}-${meta.displayVersion}-macos.dmg`;
     const dmgPath = path.join(outputDir, dmgName);
     const volName = meta.projectName;
@@ -45,6 +45,6 @@ export const macosTarget: BuildTarget = {
       fs.removeSync(staging);
     }
 
-    return dmgPath;
+    return [dmgPath];
   },
 };

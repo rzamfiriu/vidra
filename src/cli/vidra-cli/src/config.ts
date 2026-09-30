@@ -26,7 +26,7 @@ export type VidraCommand =
 export interface VidraConfigContext {
   command: VidraCommand;
   mode: "development" | "production";
-  target: "macos" | "windows" | null;
+  target: "macos" | "windows" | "android" | null;
 }
 
 export interface BridgeMemberIdentity {

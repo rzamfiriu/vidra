@@ -68,6 +68,10 @@ describe("scaffold integration", () => {
       path.join("src", `${projectName}.Host`, "MauiProgram.cs"),
       path.join("src", `${projectName}.Host`, "App.xaml.cs"),
       path.join("src", `${projectName}.Host`, "CounterJsContract.cs"),
+      path.join("src", `${projectName}.Host`, "Platforms", "Android", "MainActivity.cs"),
+      path.join("src", `${projectName}.Host`, "Platforms", "Android", "MainApplication.cs"),
+      path.join("src", `${projectName}.Host`, "Platforms", "Android", "AndroidManifest.xml"),
+      path.join("src", `${projectName}.Host`, "Platforms", "Android", "Resources", "drawable", "vidra_notification.xml"),
     ];
     for (const rel of expected) {
       const abs = path.join(root, rel);
@@ -151,12 +155,14 @@ describe("scaffold integration", () => {
     it("references Vidra.Updates.Native", async () => {
       const csproj = await fs.readFile(host(`${projectName}.Host.csproj`), "utf8");
       expect(csproj).toContain('<PackageReference Include="Vidra.Updates.Native"');
+      expect(csproj).toContain("GetTargetPlatformIdentifier('$(TargetFramework)')) != 'android'");
     });
 
     it("calls both builder extensions", async () => {
       const live = stripComments(await fs.readFile(host("MauiProgram.cs"), "utf8"));
       expect(live).toContain(".UseVidraUpdates()");
       expect(live).toContain(".UseVidraNativeUpdates()");
+      expect(await fs.readFile(host("MauiProgram.cs"), "utf8")).toContain("#if !ANDROID");
     });
 
     it.each(["MacCatalyst", "Windows"])(

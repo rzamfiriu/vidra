@@ -7,24 +7,34 @@ namespace Vidra.CodeGen;
 /// Scans compiled assemblies via MetadataLoadContext to extract module/method metadata
 /// without requiring the MAUI runtime.
 /// </summary>
-public sealed class AssemblyScanner
+public sealed class AssemblyScanner : IDisposable
 {
     private readonly MetadataLoadContext _mlc;
 
-    public AssemblyScanner(string[] assemblyPaths)
+    /// <param name="probePaths">
+    /// Files or directories to search when an assembly is not sitting beside
+    /// the one being scanned. MAUI Android builds leave package references in
+    /// the NuGet cache rather than copying them next to the app DLL, so the
+    /// build passes those reference directories here.
+    /// </param>
+    public AssemblyScanner(string[] assemblyPaths, IEnumerable<string>? probePaths = null)
     {
         // Collect all .dll files from the directories of input assemblies
         // so that transitive references (like Vidra.Bridge) are resolvable.
         var dirs = assemblyPaths
             .Select(p => Path.GetDirectoryName(Path.GetFullPath(p))!)
             .Distinct();
-        var siblingDlls = dirs.SelectMany(d => Directory.GetFiles(d, "*.dll"));
+        var siblingDlls = dirs.SelectMany(d => Directory.Exists(d) ? Directory.GetFiles(d, "*.dll") : []);
 
         // Deduplicate by filename: runtime assemblies take priority over
         // platform-specific copies to avoid MetadataLoadContext conflicts.
+        // Probe paths come next — they are the references the compiler used,
+        // which on Android are not copied beside the app assembly.
         var byName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var path in GetRuntimeAssemblies())
             byName[Path.GetFileName(path)] = path;
+        foreach (var path in EnumerateProbeAssemblies(probePaths))
+            byName.TryAdd(Path.GetFileName(path), path);
         foreach (var path in siblingDlls)
             byName.TryAdd(Path.GetFileName(path), path);
         foreach (var path in assemblyPaths)
@@ -43,12 +53,9 @@ public sealed class AssemblyScanner
             var assembly = _mlc.LoadFromAssemblyPath(Path.GetFullPath(path));
             foreach (var type in assembly.GetExportedTypes())
             {
-                var moduleAttr = type.CustomAttributes
-                    .FirstOrDefault(a => a.AttributeType.Name == "BridgeModuleAttribute");
-                var eventAttr = type.CustomAttributes
-                    .FirstOrDefault(a => a.AttributeType.Name == "BridgeEventContractAttribute");
-                var jsAttr = type.CustomAttributes
-                    .FirstOrDefault(a => a.AttributeType.Name == "JsContractAttribute");
+                var moduleAttr = FindAttribute(type.CustomAttributes, "BridgeModuleAttribute");
+                var eventAttr = FindAttribute(type.CustomAttributes, "BridgeEventContractAttribute");
+                var jsAttr = FindAttribute(type.CustomAttributes, "JsContractAttribute");
 
                 if (moduleAttr is not null)
                 {
@@ -89,8 +96,7 @@ public sealed class AssemblyScanner
 
         foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
         {
-            var methodAttr = method.CustomAttributes
-                .FirstOrDefault(a => a.AttributeType.Name == "BridgeMethodAttribute");
+            var methodAttr = FindAttribute(method.CustomAttributes, "BridgeMethodAttribute");
 
             if (methodAttr is null) continue;
 
@@ -126,8 +132,7 @@ public sealed class AssemblyScanner
         var events = new Dictionary<string, EventManifest>(StringComparer.Ordinal);
         foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
         {
-            var attr = method.CustomAttributes
-                .FirstOrDefault(a => a.AttributeType.Name == "BridgeEventAttribute");
+            var attr = FindAttribute(method.CustomAttributes, "BridgeEventAttribute");
             if (attr is null)
                 continue;
             if (method.ReturnType.FullName != "System.Void")
@@ -155,8 +160,7 @@ public sealed class AssemblyScanner
         var methods = new Dictionary<string, MethodManifest>(StringComparer.Ordinal);
         foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
         {
-            var attr = method.CustomAttributes
-                .FirstOrDefault(a => a.AttributeType.Name == "JsMethodAttribute");
+            var attr = FindAttribute(method.CustomAttributes, "JsMethodAttribute");
             if (attr is null)
                 continue;
 
@@ -257,6 +261,35 @@ public sealed class AssemblyScanner
             _ => throw new InvalidOperationException($"Unsupported manifest type kind '{type.Kind}'."),
         };
     }
+
+    /// <summary>
+    /// Finds a bridge attribute without forcing unrelated platform attributes
+    /// to resolve. Android app assemblies contain attributes from MAUI packs
+    /// that are not copied beside the intermediate managed assembly scanned by
+    /// post-build codegen; those attributes have no bearing on bridge contracts.
+    /// </summary>
+    private static CustomAttributeData? FindAttribute(
+        IEnumerable<CustomAttributeData> attributes,
+        string typeName)
+    {
+        foreach (var attribute in attributes)
+        {
+            try
+            {
+                if (attribute.AttributeType.Name == typeName)
+                    return attribute;
+            }
+            catch (FileNotFoundException ex) when (!MissingBridgeAssembly(ex))
+            {
+                // An unrelated platform attribute is intentionally ignored.
+            }
+        }
+        return null;
+    }
+
+    private static bool MissingBridgeAssembly(FileNotFoundException exception)
+        => exception.FileName?.StartsWith("Vidra.Bridge", StringComparison.OrdinalIgnoreCase) == true
+           || exception.Message.Contains("Vidra.Bridge", StringComparison.OrdinalIgnoreCase);
 
     private Type? UnwrapTaskType(Type type)
     {
@@ -408,15 +441,19 @@ public sealed class AssemblyScanner
         if (prop.PropertyType.IsValueType)
             return false;
 
-        var nullable = prop.GetCustomAttributesData()
-            .FirstOrDefault(a => a.AttributeType.FullName == "System.Runtime.CompilerServices.NullableAttribute");
+        var nullable = FindAttribute(
+            prop.GetCustomAttributesData(),
+            "NullableAttribute");
         if (nullable is not null && nullable.ConstructorArguments.Count > 0)
         {
             return FirstNullableFlag(nullable.ConstructorArguments[0]) == 2;
         }
 
-        var context = prop.DeclaringType?.GetCustomAttributesData()
-            .FirstOrDefault(a => a.AttributeType.FullName == "System.Runtime.CompilerServices.NullableContextAttribute");
+        var context = prop.DeclaringType is null
+            ? null
+            : FindAttribute(
+                prop.DeclaringType.GetCustomAttributesData(),
+                "NullableContextAttribute");
         if (context is not null && context.ConstructorArguments.Count > 0
             && context.ConstructorArguments[0].Value is byte contextFlag)
         {
@@ -462,4 +499,29 @@ public sealed class AssemblyScanner
         var runtimeDir = Path.GetDirectoryName(typeof(object).Assembly.Location)!;
         return Directory.GetFiles(runtimeDir, "*.dll");
     }
+
+    private static IEnumerable<string> EnumerateProbeAssemblies(IEnumerable<string>? probePaths)
+    {
+        if (probePaths is null)
+            yield break;
+
+        foreach (var probe in probePaths)
+        {
+            if (string.IsNullOrWhiteSpace(probe))
+                continue;
+
+            var full = Path.GetFullPath(probe);
+            if (Directory.Exists(full))
+            {
+                foreach (var dll in Directory.GetFiles(full, "*.dll"))
+                    yield return dll;
+            }
+            else if (File.Exists(full))
+            {
+                yield return full;
+            }
+        }
+    }
+
+    public void Dispose() => _mlc.Dispose();
 }
