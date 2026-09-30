@@ -294,14 +294,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
-      # No xcode-select pin. There used to be one at 26.3, from when that was
-      # the newest Xcode on the image and the Catalyst reference assemblies
-      # already wanted a newer SDK than any Xcode present (MT0180) — pinning at
-      # least kept the rest of the toolchain on the best available. The image
-      # has moved on and the pin inverted: it held the runner at 26.3 while the
-      # current Catalyst pack requires the 26.5 SDK from Xcode 26.6, so the
-      # linker failed the build the pin was meant to protect. The image default
-      # satisfies the pack; log what we got rather than choosing for it.
+      # No xcode-select pin. There used to be one at 26.3, and it inverted: it
+      # held the runner on an older Xcode while the Catalyst pack required a
+      # newer SDK, so the linker failed the build the pin was meant to protect.
+      # The image default is the Xcode we link against. The workload set below
+      # is what has to stay within that Xcode's reach.
       - name: Log Xcode version (macOS)
         if: runner.os == 'macOS'
         run: |
@@ -324,18 +321,23 @@ jobs:
 
       # ---- Template build smoke (requires MAUI workload) ----
       #
-      # The manifest is deliberately NOT pinned. `--skip-manifest-update` used to
-      # be here because the newest maccatalyst manifest wanted the SDK from
-      # Xcode 26.4 while macos-latest topped out at 26.3 (MT0180 in ILLink's
-      # Setup step); the image now ships 26.6, so the reason is gone — and the
-      # pin had become actively harmful. It held the Catalyst SDK pack at
-      # 26.0.11017, where `dotnet run` execs `$(AssemblyName).app` while the
-      # build produces `$(_AppBundleName).app` (dotnet/macios#26318, fixed in
-      # 26.2.10233+). CI was therefore the only place the app could not launch
-      # under `dotnet watch`, which is precisely what this job exists to prove.
+      # macOS pins the workload set. An unpinned install now resolves to
+      # Mac Catalyst 27.0.10722, and ILLink dies with MT0180 because that pack
+      # requires the Xcode 27 SDK while macos-latest still has Xcode 26.
+      # 10.0.303.1 is the newest set still on the 26.5 SDK, which Xcode 26.6
+      # can link. Do not replace this with `--skip-manifest-update`: that froze
+      # the pack at 26.0.11017, before the app-bundle name fix
+      # (dotnet/macios#26318, 26.2.10233+), and `dotnet watch` could not launch
+      # the app — the thing this job exists to prove. Windows does not link
+      # against the Catalyst SDK, so it keeps the latest set.
       - name: Install MAUI workload (${{ matrix.maui-workload }})
         shell: bash
-        run: dotnet workload install ${{ matrix.maui-workload }}
+        run: |
+          if [ "${{ runner.os }}" = "macOS" ]; then
+            dotnet workload install ${{ matrix.maui-workload }} --version 10.0.303.1
+          else
+            dotnet workload install ${{ matrix.maui-workload }}
+          fi
 
       - name: Log installed workloads
         shell: bash
@@ -1038,7 +1040,9 @@ jobs:
           profile: pixel_6
           disable-animations: true
           script: |
-            set -euo pipefail
+            # The action runs this with /usr/bin/sh, which is dash on the
+            # runner. dash rejects `pipefail`. There is no pipeline here.
+            set -eu
             apk="$(ls '${{ runner.temp }}/vidra-smoke'/dist/*-android.apk)"
             adb install -r "$apk"
             adb reverse tcp:8099 tcp:8099
