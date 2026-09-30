@@ -1040,18 +1040,11 @@ jobs:
           profile: pixel_6
           disable-animations: true
           script: |
-            # The action runs this with /usr/bin/sh, which is dash on the
-            # runner. dash rejects `pipefail`. There is no pipeline here.
-            set -eu
-            apk="$(ls '${{ runner.temp }}/vidra-smoke'/dist/*-android.apk)"
-            adb install -r "$apk"
+            # Each line is a separate `sh -c`, so a variable set on one line
+            # is gone on the next, and a trailing backslash does not continue.
+            adb install -r ${{ runner.temp }}/vidra-smoke/dist/*-android.apk
             adb reverse tcp:8099 tcp:8099
-            node "$GITHUB_WORKSPACE/tests/smoke/ota-e2e.mjs" \
-              --android-app-id com.vidra.smoke \
-              --project '${{ runner.temp }}/vidra-smoke' \
-              --cli "$GITHUB_WORKSPACE/src/cli/vidra-cli/dist/cli.js" \
-              --work '${{ runner.temp }}/android-ota-work' \
-              --port 8099
+            node "$GITHUB_WORKSPACE/tests/smoke/ota-e2e.mjs" --android-app-id com.vidra.smoke --project '${{ runner.temp }}/vidra-smoke' --cli "$GITHUB_WORKSPACE/src/cli/vidra-cli/dist/cli.js" --work '${{ runner.temp }}/android-ota-work' --port 8099
 
       - name: Upload Android artifacts and logs
         if: always()
