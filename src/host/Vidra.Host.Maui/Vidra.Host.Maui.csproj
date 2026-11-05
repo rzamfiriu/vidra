@@ -84,7 +84,7 @@
   <PropertyGroup>
     <VidraCodeGenProject>$(MSBuildThisFileDirectory)..\..\tools\Vidra.CodeGen\Vidra.CodeGen.csproj</VidraCodeGenProject>
     <VidraTsOutputDir>$(MSBuildThisFileDirectory)..\..\sdk\vidra-js\src\generated</VidraTsOutputDir>
-    <VidraSdkImport>../singleton.js</VidraSdkImport>
+    <VidraSdkImport>../bridge.js</VidraSdkImport>
     <VidraContractScope>core</VidraContractScope>
     <VidraModulesDir>$(MSBuildThisFileDirectory)..\..\modules</VidraModulesDir>
   </PropertyGroup>

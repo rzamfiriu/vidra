@@ -118,8 +118,8 @@ public sealed partial class WebViewBridge : IJsCallbackChannel, IUnsafeJsCallbac
     /// <item>a frame arrived from JS — only the SDK's transport sends those, so
     /// the bundle's JavaScript has parsed, run and reached native;</item>
     /// <item>the page has installed <c>window.__vidra_initialize</c>, which the
-    /// SDK does while constructing its client. This covers a bundle that boots
-    /// the SDK and never calls into native.</item>
+    /// SDK does when its bridge module evaluates. This covers a bundle that
+    /// boots the SDK and never calls into native.</item>
     /// </list>
     ///
     /// The inbound frame is the one that normally fires, and it exists because

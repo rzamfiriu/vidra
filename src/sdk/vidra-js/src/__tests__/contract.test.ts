@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { VidraClient } from "../client.js";
+import { createBridge, type VidraBridge } from "../client.js";
 import type {
   BridgeRequest,
   BridgeResponse,
@@ -21,39 +21,43 @@ const FIXTURE_DIR = resolve(
 const readFixture = (name: string): any =>
   JSON.parse(readFileSync(resolve(FIXTURE_DIR, name), "utf8"));
 
-class RecordingTransport implements Transport {
-  public sent: BridgeRequest[] = [];
-  public sentReverse: ReverseResponse[] = [];
-  public onSend?: (req: BridgeRequest) => void;
-
-  send = (request: BridgeRequest): void => {
-    this.sent.push(request);
-    this.onSend?.(request);
-  };
-
-  sendReverse = (response: ReverseResponse): void => {
-    this.sentReverse.push(response);
-  };
+interface RecordingTransport extends Transport {
+  sent: BridgeRequest[];
+  sentReverse: ReverseResponse[];
+  onSend?: (request: BridgeRequest) => void;
 }
 
-const deliver = (response: BridgeResponse): void => {
-  (window as any).__vidra_callback(response);
+const createRecordingTransport = (): RecordingTransport => {
+  const transport: RecordingTransport = {
+    sent: [],
+    sentReverse: [],
+    send: (request) => {
+      transport.sent.push(request);
+      transport.onSend?.(request);
+    },
+    sendReverse: (response) => {
+      transport.sentReverse.push(response);
+    },
+  };
+  return transport;
 };
 
 describe("Bridge contract fixtures (SDK side)", () => {
   let transport: RecordingTransport;
-  let client: VidraClient;
+  let bridge: VidraBridge;
+  let deliver: (response: BridgeResponse) => void;
 
   beforeEach(() => {
-    transport = new RecordingTransport();
-    client = new VidraClient({ transport });
+    transport = createRecordingTransport();
+    bridge = createBridge({ transport });
+    deliver = bridge.host.deliverResponse;
   });
 
   it("consumes invoke.success.response.json and returns data", async () => {
     const expected = readFixture("invoke.success.response.json");
     transport.onSend = (req) => deliver({ ...expected, id: req.id });
 
-    const result = await client.unsafe.invoke("echo", "ping", { text: "hello" });
+    const result = await bridge.unsafe.invoke("echo", "ping", { text: "hello" });
     expect(result).toEqual(expected.data);
   });
 
@@ -61,7 +65,7 @@ describe("Bridge contract fixtures (SDK side)", () => {
     const expected = readFixture("invoke.module_not_found.response.json");
     transport.onSend = (req) => deliver({ ...expected, id: req.id });
 
-    await expect(client.unsafe.invoke("does-not-exist", "noop")).rejects.toThrow(
+    await expect(bridge.unsafe.invoke("does-not-exist", "noop")).rejects.toThrow(
       `[${expected.error.code}] ${expected.error.message}`,
     );
   });
@@ -70,7 +74,7 @@ describe("Bridge contract fixtures (SDK side)", () => {
     const expected = readFixture("invoke.module_error.response.json");
     transport.onSend = (req) => deliver({ ...expected, id: req.id });
 
-    await expect(client.unsafe.invoke("echo", "fail")).rejects.toThrow(
+    await expect(bridge.unsafe.invoke("echo", "fail")).rejects.toThrow(
       `[${expected.error.code}] ${expected.error.message}`,
     );
   });
@@ -79,30 +83,30 @@ describe("Bridge contract fixtures (SDK side)", () => {
     const expected = readFixture("capabilities.response.json");
     transport.onSend = (req) => deliver({ ...expected, id: req.id });
 
-    const caps = await client.capabilities();
+    const caps = await bridge.capabilities();
     expect(caps).toEqual(expected.data);
   });
 
   it("emits events matching event.runtime_hot_reloaded.json shape", () => {
     const received: unknown[] = [];
-    client.unsafe.on("runtime", "hotReloaded", (data) => received.push(data));
+    bridge.unsafe.on("runtime", "hotReloaded", (data) => received.push(data));
 
     const event = readFixture("event.runtime_hot_reloaded.json") as BridgeEvent;
-    (window as any).__vidra_onevent(event);
+    bridge.host.dispatchEvent(event);
 
     expect(received).toEqual([event.payload]);
   });
 
   it("delivers connectivity.changed enum event matching the generated type", () => {
     const received: ConnectivityStatus[] = [];
-    client.unsafe.on<ConnectivityStatus>(
+    bridge.unsafe.on<ConnectivityStatus>(
       "connectivity",
       "changed",
       (data) => received.push(data),
     );
 
     const event = readFixture("event.connectivity_changed.json") as BridgeEvent;
-    (window as any).__vidra_onevent(event);
+    bridge.host.dispatchEvent(event);
 
     // The typed literal makes tsc verify the fixture's enum strings are valid
     // members of the generated string-union types (guards enum wire drift).
@@ -114,17 +118,14 @@ describe("Bridge contract fixtures (SDK side)", () => {
   });
 
   it("reverse.success.request.json is handled and produces a success response", async () => {
-    client.unsafe.handle<{ message: string }, boolean>(
+    bridge.unsafe.handle<{ message: string }, boolean>(
       "dialog",
       "confirm",
       async () => true,
     );
 
     const req = readFixture("reverse.success.request.json") as ReverseRequest;
-    (window as any).__vidra_invoke(req);
-
-    // drain microtasks
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await bridge.host.invokeHandler(req);
 
     const expected = readFixture("reverse.success.response.json");
     expect(transport.sentReverse[0]).toEqual(expected);
@@ -133,30 +134,26 @@ describe("Bridge contract fixtures (SDK side)", () => {
   it("unregistered handlers produce reverse.handler_not_found.response.json", async () => {
     const expected = readFixture("reverse.handler_not_found.response.json");
 
-    const request: ReverseRequest = {
+    await bridge.host.invokeHandler({
       id: expected.id,
       contract: "dialog",
       member: "confirm",
-    };
-    (window as any).__vidra_invoke(request);
-
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    });
 
     expect(transport.sentReverse[0]).toEqual(expected);
   });
 
   it("throwing handlers produce reverse.handler_error.response.json shape", async () => {
-    client.unsafe.handle("test", "boom", () => {
+    bridge.unsafe.handle("test", "boom", () => {
       throw new Error("boom");
     });
     const expected = readFixture("reverse.handler_error.response.json");
 
-    (window as any).__vidra_invoke({
+    await bridge.host.invokeHandler({
       id: expected.id,
       contract: "test",
       member: "boom",
     });
-    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(transport.sentReverse[0].id).toBe(expected.id);
     expect(transport.sentReverse[0].success).toBe(false);

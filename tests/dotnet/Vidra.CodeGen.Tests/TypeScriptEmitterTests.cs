@@ -77,14 +77,63 @@ public sealed class TypeScriptEmitterTests
     }
 
     [Fact]
-    public void EmitContract_Emits_Proxy_Class_With_Expected_Name()
+    public void EmitContract_Emits_Arrow_Factory_With_Expected_Name()
     {
         var manifest = ScanFixture();
         var emitter = new TypeScriptEmitter();
 
         var output = emitter.EmitContract("sample", manifest.Contracts["sample"]);
-        output.Should().Contain("export class SampleProxy");
-        output.Should().Contain("this.client.unsafe.invoke(\"sample\", \"echo\", args)");
+        output.Should().Contain("export const createSample = (bridge: VidraBridge) => ({");
+        output.Should().Contain("echo: (args: EchoArgs): Promise<EchoResult> =>");
+        output.Should().Contain("bridge.unsafe.invoke(\"sample\", \"echo\", args),");
+        output.Should().Contain("export type Sample = ReturnType<typeof createSample>;");
+    }
+
+    [Fact]
+    public void EmitContract_Emits_Handler_Factory_For_Js_Methods()
+    {
+        var manifest = ScanFixture();
+        var emitter = new TypeScriptEmitter();
+
+        var output = emitter.EmitContract("dialog", manifest.Contracts["dialog"]);
+        output.Should().Contain("export const createDialogHandlers = (bridge: VidraBridge) => ({");
+        output.Should().Contain("bridge.unsafe.handle(\"dialog\", \"confirm\", handler),");
+        output.Should().Contain("export type DialogHandlers = ReturnType<typeof createDialogHandlers>;");
+    }
+
+    // The runtime SDK is written without classes, function declarations, or
+    // method shorthand; generated output has to hold the same line.
+    [Fact]
+    public void Emitted_TypeScript_Contains_No_Classes_Or_Method_Shorthand()
+    {
+        var manifest = ScanFixture();
+        var emitter = new TypeScriptEmitter();
+
+        var outputs = manifest.Contracts
+            .Select(entry => emitter.EmitContract(entry.Key, entry.Value))
+            .Append(emitter.EmitBarrel(manifest));
+
+        foreach (var output in outputs)
+        {
+            output.Should().NotContain("class ");
+            output.Should().NotContain("function ");
+            output.Should().NotContain("constructor(");
+            output.Should().NotContain("this.");
+        }
+    }
+
+    [Fact]
+    public void EmitBarrel_Declares_Fingerprint_And_Binds_Factories_To_The_Bridge()
+    {
+        var manifest = ScanFixture();
+        var emitter = new TypeScriptEmitter();
+
+        var output = emitter.EmitBarrel(manifest, "../bridge.js", "core");
+        output.Should().Contain("import { bridge, expectations } from \"../bridge.js\";");
+        output.Should().Contain($"expectations.declare(\"core\", \"{manifest.Fingerprint}\");");
+        output.Should().Contain("export const sample = createSample(bridge);");
+        output.Should().Contain("export const dialogHandlers = createDialogHandlers(bridge);");
+        output.Should().NotContain("register");
     }
 
     [Fact]

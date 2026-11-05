@@ -19,7 +19,7 @@
     <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
     <VidraTsOutputDir>$(MSBuildThisFileDirectory)generated-aggregate</VidraTsOutputDir>
     <VidraContractScope>core</VidraContractScope>
-    <VidraSdkImport>../singleton.js</VidraSdkImport>
+    <VidraSdkImport>../bridge.js</VidraSdkImport>
     <VidraCodeGenProject>$(MSBuildThisFileDirectory)../../../src/tools/Vidra.CodeGen/Vidra.CodeGen.csproj</VidraCodeGenProject>
   </PropertyGroup>
 
