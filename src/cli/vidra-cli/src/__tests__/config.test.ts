@@ -200,4 +200,16 @@ describe("vidra.config.ts", () => {
     expect(first.changed).toBe(true);
     expect(second.changed).toBe(false);
   });
+
+  it("declares the access fingerprint into the SDK's expectations", async () => {
+    const root = await project("export default {};");
+    const uiDir = path.join(root, "ui");
+
+    const written = writeFrontendAccessFingerprint(uiDir, "fingerprint");
+    const source = await fs.readFile(written.path, "utf8");
+
+    expect(source).toContain('import { expectations } from "@vidra-dev/sdk";');
+    expect(source).toContain('expectations.declare("access", "fingerprint");');
+    expect(source).not.toContain("register");
+  });
 });

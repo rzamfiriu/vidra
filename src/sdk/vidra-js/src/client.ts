@@ -9,209 +9,123 @@ import type {
   JsHandler,
   BridgeHandshake,
 } from "./types.js";
-import {
-  Transport,
-  CustomSchemeTransport,
-  BrowserFallbackTransport,
-  NativeMessageTransport,
-  hasNativeMessageChannel,
-} from "./transport.js";
+import { type Transport, detectTransport } from "./transport.js";
 
-let _idCounter = 0;
 const PROTOCOL_VERSION = 2;
 const EMPTY_FINGERPRINT =
   "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
-const nextId = (): string => {
-  return `req_${++_idCounter}_${Date.now()}`;
-};
+/**
+ * Which build artefact a fingerprint declaration describes:
+ * - `core`: the SDK's generated built-in contracts
+ * - `app`: the application's generated contracts
+ * - `access`: the bridge access policy the frontend was built against
+ */
+export type ExpectationScope = "core" | "app" | "access";
 
-export interface VidraClientOptions {
-  /** Override the transport layer (auto-detected by default). */
-  transport?: Transport;
-  /** Timeout in ms for invoke calls. Default: 30_000 */
-  timeout?: number;
+/**
+ * Write-once record of the fingerprints this frontend was generated against.
+ * Generated barrels and the CLI declare into it while modules evaluate; the
+ * bridge reads it when the host sends its handshake.
+ */
+export interface Expectations {
+  /**
+   * Declare the fingerprint for a scope. Declaring the same value again is a
+   * no-op; a different value for an already-declared scope throws, because two
+   * generated modules for the same scope are loaded in one page.
+   */
+  declare: (scope: ExpectationScope, fingerprint: string) => void;
+  get: (scope: ExpectationScope) => string | undefined;
 }
 
-export class VidraClient {
-  private _explicitTransport?: Transport;
-  private _transport?: Transport;
-  private timeout: number;
-  private pending = new Map<
-    string,
-    { resolve: (v: unknown) => void; reject: (e: Error) => void }
-  >();
-  private listeners = new Map<string, Set<EventHandler>>();
-  private handlers = new Map<string, JsHandler>();
-  private coreFingerprint = EMPTY_FINGERPRINT;
-  private appFingerprint = EMPTY_FINGERPRINT;
-  private expectedAccessFingerprint: string | null = null;
-  readonly unsafe: UnsafeVidraClient;
+export const createExpectations = (): Expectations => {
+  const declared = new Map<ExpectationScope, string>();
 
-  constructor(options: VidraClientOptions = {}) {
-    this.timeout = options.timeout ?? 30_000;
-    this._explicitTransport = options.transport;
-    this.unsafe = {
-      invoke: <T = unknown>(
-        contract: string,
-        member: string,
-        payload?: unknown,
-      ) => this.invokeUnsafe<T>(contract, member, payload),
-      on: <T = unknown>(
-        contract: string,
-        member: string,
-        handler: EventHandler<T>,
-      ) => this.onUnsafe(contract, member, handler),
-      handle: <TPayload = unknown, TResult = unknown>(
-        contract: string,
-        member: string,
-        handler: JsHandler<TPayload, TResult>,
-      ) => this.handleUnsafe(contract, member, handler),
-    };
+  return {
+    declare: (scope, fingerprint) => {
+      const existing = declared.get(scope);
+      if (existing !== undefined && existing !== fingerprint) {
+        throw new Error(
+          `[vidra] Conflicting ${scope} fingerprint declarations (${existing} vs ${fingerprint}). Two generated modules for the same scope are loaded; regenerate TypeScript contracts.`,
+        );
+      }
+      declared.set(scope, fingerprint);
+    },
+    get: (scope) => declared.get(scope),
+  };
+};
 
-    // The C# side calls window.__vidra_callback(response) to deliver results.
-    (window as any).__vidra_callback = (response: BridgeResponse) => {
-      this.handleResponse(response);
-    };
-
-    // The C# side calls window.__vidra_onevent(event) to push events.
-    (window as any).__vidra_onevent = (event: BridgeEvent) => {
-      this.handleEvent(event);
-    };
-
-    // The C# side calls window.__vidra_invoke(request) for reverse RPC.
-    (window as any).__vidra_invoke = (request: ReverseRequest) => {
-      this.handleReverseCall(request);
-    };
-
-    (window as any).__vidra_initialize = (handshake: BridgeHandshake) => {
-      this.initialize(handshake);
-    };
-  }
-
-  /** @internal Used by generated contract barrels. */
-  registerGeneratedManifest(scope: "core" | "app", fingerprint: string): void {
-    if (scope === "core") {
-      this.coreFingerprint = fingerprint;
-    } else {
-      this.appFingerprint = fingerprint;
-    }
-  }
-
-  /** @internal Stamped by the Vidra CLI into the frontend build. */
-  registerExpectedAccessFingerprint(fingerprint: string): void {
-    this.expectedAccessFingerprint = fingerprint;
-  }
-
-  /**
-   * Lazily resolve the transport on first use. Preference order:
-   *   1. an explicitly supplied transport
-   *   2. the native message channel (WKWebView / WebView2) when present
-   *   3. the custom-scheme transport when the host marker is set
-   *   4. the browser-only fallback
-   *
-   * The browser fallback is intentionally never cached: a native channel can
-   * become available shortly after load (e.g. the WKWebView script-message
-   * handler registers just after the page loads), so we keep re-detecting until
-   * a real native transport is found.
-   */
-  private get transport(): Transport {
-    if (this._explicitTransport) return this._explicitTransport;
-    if (this._transport) return this._transport;
-
-    const detected = this.detectTransport();
-    if (!(detected instanceof BrowserFallbackTransport)) {
-      this._transport = detected;
-    }
-    return detected;
-  }
-
-  private detectTransport(): Transport {
-    if (hasNativeMessageChannel()) return new NativeMessageTransport();
-    if (isNativeHost()) return new CustomSchemeTransport();
-    return new BrowserFallbackTransport();
-  }
-
-  /** @internal Called by the explicit unsafe API and generated proxies. */
-  private invokeUnsafe<T = unknown>(
+export interface UnsafeVidra {
+  invoke: <T = unknown>(
     contract: string,
     member: string,
     payload?: unknown,
-  ): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      const id = nextId();
+  ) => Promise<T>;
 
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(
-          new Error(
-            `[vidra] Timeout after ${this.timeout}ms for ${contract}.${member}`,
-          ),
-        );
-      }, this.timeout);
-
-      this.pending.set(id, {
-        resolve: (data) => {
-          clearTimeout(timer);
-          resolve(data as T);
-        },
-        reject: (err) => {
-          clearTimeout(timer);
-          reject(err);
-        },
-      });
-
-      const request: BridgeRequest = { id, contract, member, payload };
-      this.transport.send(request);
-    });
-  }
-
-  /** @internal Called by the explicit unsafe API and generated JS contracts. */
-  private handleUnsafe<TPayload = unknown, TResult = unknown>(
-    contract: string,
-    member: string,
-    handler: JsHandler<TPayload, TResult>,
-  ): () => void {
-    const key = contractKey(contract, member);
-    if (this.handlers.has(key)) {
-      throw new Error(
-        `[vidra] JavaScript handler '${contract}.${member}' is already registered.`,
-      );
-    }
-
-    const registered = handler as JsHandler;
-    this.handlers.set(key, registered);
-    return () => {
-      if (this.handlers.get(key) === registered) {
-        this.handlers.delete(key);
-      }
-    };
-  }
-
-  /** @internal Called by the explicit unsafe API and generated event methods. */
-  private onUnsafe<T = unknown>(
+  on: <T = unknown>(
     contract: string,
     member: string,
     handler: EventHandler<T>,
-  ): () => void {
-    const key = contractKey(contract, member);
-    if (!this.listeners.has(key)) {
-      this.listeners.set(key, new Set());
-    }
-    this.listeners.get(key)!.add(handler as EventHandler);
-    return () => this.listeners.get(key)?.delete(handler as EventHandler);
-  }
+  ) => () => void;
 
-  /** Query which modules and methods are available on the native side. */
-  async capabilities(): Promise<Capabilities> {
-    return this.invokeUnsafe<Capabilities>("__bridge", "capabilities");
-  }
+  handle: <TPayload = unknown, TResult = unknown>(
+    contract: string,
+    member: string,
+    handler: JsHandler<TPayload, TResult>,
+  ) => () => void;
+}
 
-  private handleResponse(response: BridgeResponse): void {
-    const entry = this.pending.get(response.id);
+/** Entry points the native host calls into; `installWindowCallbacks` exposes
+ * them as the `window.__vidra_*` functions the host protocol expects. */
+export interface HostEntryPoints {
+  deliverResponse: (response: BridgeResponse) => void;
+  dispatchEvent: (event: BridgeEvent) => void;
+  invokeHandler: (request: ReverseRequest) => Promise<void>;
+  initialize: (handshake: BridgeHandshake) => void;
+}
+
+export interface VidraBridge {
+  readonly unsafe: UnsafeVidra;
+  /** Query which contracts and members are available on the native side. */
+  readonly capabilities: () => Promise<Capabilities>;
+  readonly host: HostEntryPoints;
+}
+
+export interface BridgeOptions {
+  /** Override the transport layer (auto-detected on first use by default). */
+  transport?: Transport;
+  /** Timeout in ms for invoke calls. Default: 30_000 */
+  timeout?: number;
+  /** Fingerprints to compare against the host handshake. Default: none declared. */
+  expectations?: Expectations;
+}
+
+interface PendingRequest {
+  resolve: (value: unknown) => void;
+  reject: (error: Error) => void;
+}
+
+/**
+ * Build a bridge with its own request correlation, listeners, and handlers.
+ * Pure apart from the transport it eventually sends on: nothing is written to
+ * `window` until `installWindowCallbacks` is called.
+ */
+export const createBridge = (options: BridgeOptions = {}): VidraBridge => {
+  const timeout = options.timeout ?? 30_000;
+  const expectations = options.expectations ?? createExpectations();
+  const pending = new Map<string, PendingRequest>();
+  const listeners = new Map<string, Set<EventHandler>>();
+  const handlers = new Map<string, JsHandler>();
+  let idCounter = 0;
+  let cachedTransport = options.transport;
+
+  const nextId = (): string => `req_${++idCounter}_${Date.now()}`;
+
+  const deliverResponse = (response: BridgeResponse): void => {
+    const entry = pending.get(response.id);
     if (!entry) return;
 
-    this.pending.delete(response.id);
+    pending.delete(response.id);
 
     if (response.success) {
       entry.resolve(response.data);
@@ -220,17 +134,95 @@ export class VidraClient {
         new Error(
           response.error
             ? `[${response.error.code}] ${response.error.message}`
-            : "Unknown native error"
-        )
+            : "Unknown native error",
+        ),
       );
     }
-  }
+  };
 
-  private handleEvent(event: BridgeEvent): void {
-    const key = contractKey(event.contract, event.member);
-    const handlers = this.listeners.get(key);
-    if (!handlers) return;
-    for (const handler of handlers) {
+  const transport = (): Transport => {
+    if (cachedTransport) return cachedTransport;
+
+    const detected = detectTransport(deliverResponse);
+    if (detected.cacheable) {
+      cachedTransport = detected.transport;
+    }
+    return detected.transport;
+  };
+
+  const invoke = <T = unknown>(
+    contract: string,
+    member: string,
+    payload?: unknown,
+  ): Promise<T> =>
+    new Promise<T>((resolve, reject) => {
+      const id = nextId();
+
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(
+          new Error(`[vidra] Timeout after ${timeout}ms for ${contract}.${member}`),
+        );
+      }, timeout);
+
+      pending.set(id, {
+        resolve: (data) => {
+          clearTimeout(timer);
+          resolve(data as T);
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      });
+
+      const request: BridgeRequest = { id, contract, member, payload };
+      transport().send(request);
+    });
+
+  const on = <T = unknown>(
+    contract: string,
+    member: string,
+    handler: EventHandler<T>,
+  ): (() => void) => {
+    const key = contractKey(contract, member);
+    let set = listeners.get(key);
+    if (!set) {
+      set = new Set();
+      listeners.set(key, set);
+    }
+    set.add(handler as EventHandler);
+    return () => listeners.get(key)?.delete(handler as EventHandler);
+  };
+
+  const handle = <TPayload = unknown, TResult = unknown>(
+    contract: string,
+    member: string,
+    handler: JsHandler<TPayload, TResult>,
+  ): (() => void) => {
+    const key = contractKey(contract, member);
+    if (handlers.has(key)) {
+      throw new Error(
+        `[vidra] JavaScript handler '${contract}.${member}' is already registered.`,
+      );
+    }
+
+    const registered = handler as JsHandler;
+    handlers.set(key, registered);
+    return () => {
+      if (handlers.get(key) === registered) {
+        handlers.delete(key);
+      }
+    };
+  };
+
+  const capabilities = (): Promise<Capabilities> =>
+    invoke<Capabilities>("__bridge", "capabilities");
+
+  const dispatchEvent = (event: BridgeEvent): void => {
+    const set = listeners.get(contractKey(event.contract, event.member));
+    if (!set) return;
+    for (const handler of set) {
       try {
         handler(event.payload);
       } catch (e) {
@@ -240,63 +232,55 @@ export class VidraClient {
         );
       }
     }
-  }
+  };
 
-  private async handleReverseCall(request: ReverseRequest): Promise<void> {
-    const key = contractKey(request.contract, request.member);
-    const handler = this.handlers.get(key);
+  const invokeHandler = async (request: ReverseRequest): Promise<void> => {
+    const handler = handlers.get(contractKey(request.contract, request.member));
+    const respond = (response: ReverseResponse): void =>
+      transport().sendReverse(response);
 
     if (!handler) {
-      const response: ReverseResponse = {
+      respond({
         id: request.id,
         success: false,
         error: {
           code: "JS_HANDLER_NOT_FOUND",
           message: `No JavaScript handler registered for '${request.contract}.${request.member}'.`,
         },
-      };
-      this.transport.sendReverse(response);
+      });
       return;
     }
 
     try {
       const result = await handler(request.payload);
-      const response: ReverseResponse = {
-        id: request.id,
-        success: true,
-        data: result,
-      };
-      this.transport.sendReverse(response);
+      respond({ id: request.id, success: true, data: result });
     } catch (e) {
-      const response: ReverseResponse = {
+      respond({
         id: request.id,
         success: false,
         error: {
           code: "JS_HANDLER_ERROR",
           message: e instanceof Error ? e.message : String(e),
         },
-      };
-      this.transport.sendReverse(response);
+      });
     }
-  }
+  };
 
-  private initialize(handshake: BridgeHandshake): void {
+  const initialize = (handshake: BridgeHandshake): void => {
     const mismatches: string[] = [];
     if (handshake.protocolVersion !== PROTOCOL_VERSION) {
       mismatches.push(
         `protocol host=${handshake.protocolVersion} sdk=${PROTOCOL_VERSION}`,
       );
     }
-    if (handshake.coreFingerprint !== this.coreFingerprint) {
+    if (handshake.coreFingerprint !== (expectations.get("core") ?? EMPTY_FINGERPRINT)) {
       mismatches.push("core contract fingerprint");
     }
-    if (handshake.appFingerprint !== this.appFingerprint) {
+    if (handshake.appFingerprint !== (expectations.get("app") ?? EMPTY_FINGERPRINT)) {
       mismatches.push("app contract fingerprint");
     }
-    if (
-      this.expectedAccessFingerprint !== null &&
-      handshake.accessFingerprint !== this.expectedAccessFingerprint
-    ) {
+    const expectedAccess = expectations.get("access");
+    if (expectedAccess !== undefined && handshake.accessFingerprint !== expectedAccess) {
       mismatches.push("bridge access fingerprint");
     }
 
@@ -305,28 +289,42 @@ export class VidraClient {
     const message = `[vidra] Bridge contract mismatch: ${mismatches.join(", ")}. Rebuild the host and regenerate TypeScript contracts.`;
     renderBridgeError(message);
     throw new Error(message);
+  };
+
+  return {
+    unsafe: { invoke, on, handle },
+    capabilities,
+    host: { deliverResponse, dispatchEvent, invokeHandler, initialize },
+  };
+};
+
+/**
+ * Expose a bridge's host entry points as the `window.__vidra_*` functions the
+ * native host calls. Returns an uninstaller that removes only the functions it
+ * installed: when another bridge has been installed since (tests install one
+ * per case), its callbacks are left in place.
+ */
+export const installWindowCallbacks = (bridge: VidraBridge): (() => void) => {
+  const target = window as unknown as Record<string, unknown>;
+  const callbacks: Record<string, unknown> = {
+    __vidra_callback: bridge.host.deliverResponse,
+    __vidra_onevent: bridge.host.dispatchEvent,
+    __vidra_invoke: bridge.host.invokeHandler,
+    __vidra_initialize: bridge.host.initialize,
+  };
+
+  for (const [name, callback] of Object.entries(callbacks)) {
+    target[name] = callback;
   }
-}
 
-export interface UnsafeVidraClient {
-  invoke<T = unknown>(
-    contract: string,
-    member: string,
-    payload?: unknown,
-  ): Promise<T>;
-
-  on<T = unknown>(
-    contract: string,
-    member: string,
-    handler: EventHandler<T>,
-  ): () => void;
-
-  handle<TPayload = unknown, TResult = unknown>(
-    contract: string,
-    member: string,
-    handler: JsHandler<TPayload, TResult>,
-  ): () => void;
-}
+  return () => {
+    for (const [name, callback] of Object.entries(callbacks)) {
+      if (target[name] === callback) {
+        delete target[name];
+      }
+    }
+  };
+};
 
 const contractKey = (contract: string, member: string): string =>
   `${contract}\u0000${member}`;
@@ -340,9 +338,4 @@ const renderBridgeError = (message: string): void => {
     "white-space:pre-wrap;padding:24px;margin:24px;border:1px solid #b91c1c;color:#b91c1c;background:#fef2f2;font:14px/1.5 monospace";
   pre.textContent = message;
   document.body.replaceChildren(pre);
-};
-
-const isNativeHost = (): boolean => {
-  // The native host injects this marker before the web content loads.
-  return typeof (window as any).__vidra_native !== "undefined";
 };

@@ -6,8 +6,8 @@ import type { BridgeRequest, BridgeResponse, ReverseResponse } from "./types.js"
  * (`vidra://bridge?payload=...`) which the MAUI WebViewBridge intercepts.
  */
 export interface Transport {
-  send(request: BridgeRequest): void;
-  sendReverse(response: ReverseResponse): void;
+  send: (request: BridgeRequest) => void;
+  sendReverse: (response: ReverseResponse) => void;
 }
 
 /**
@@ -24,8 +24,8 @@ type NativeFrame =
   | { kind: "request"; data: BridgeRequest }
   | { kind: "reverse"; data: ReverseResponse };
 
-interface NativePoster {
-  postMessage(message: string): void;
+export interface NativePoster {
+  postMessage: (message: string) => void;
 }
 
 const appleChannel = (): NativePoster | undefined => {
@@ -43,13 +43,18 @@ const androidChannel = (): NativePoster | undefined => {
   return bridge && typeof bridge.postMessage === "function" ? bridge : undefined;
 };
 
+const nativeChannel = (): NativePoster | undefined =>
+  appleChannel() ?? windowsChannel() ?? androidChannel();
+
 /** True when a first-class native message channel is
  * available. Preferred over the custom-scheme transport because it has no URL
  * length limit, no per-message iframe, and is binary-safe. */
-export const hasNativeMessageChannel = (): boolean =>
-  appleChannel() !== undefined
-  || windowsChannel() !== undefined
-  || androidChannel() !== undefined;
+export const hasNativeMessageChannel = (): boolean => nativeChannel() !== undefined;
+
+/** True when the native host has injected its marker before the web content
+ * loaded, meaning custom-scheme navigations will be intercepted. */
+export const isNativeHost = (): boolean =>
+  typeof (window as any).__vidra_native !== "undefined";
 
 /**
  * Transport that uses the platform's native message channel:
@@ -60,87 +65,109 @@ export const hasNativeMessageChannel = (): boolean =>
  * - Android: `window.vidra.postMessage(...)` handled by an
  *   origin-scoped AndroidX WebKit message listener on the C# side.
  *
- * Unlike {@link CustomSchemeTransport}, payloads are not URL-encoded into a
- * navigation, so large messages (e.g. file contents) are not truncated.
+ * Unlike {@link createCustomSchemeTransport}, payloads are not URL-encoded into
+ * a navigation, so large messages (e.g. file contents) are not truncated.
+ *
+ * Throws when no channel is available.
  */
-export class NativeMessageTransport implements Transport {
-  private readonly channel: NativePoster;
-
-  constructor(
-    channel: NativePoster | undefined =
-      appleChannel() ?? windowsChannel() ?? androidChannel(),
-  ) {
-    if (!channel) {
-      throw new Error(
-        "[vidra] No native message channel is available (expected WKWebView, WebView2, or Android WebView).",
-      );
-    }
-    this.channel = channel;
+export const createNativeMessageTransport = (
+  channel: NativePoster | undefined = nativeChannel(),
+): Transport => {
+  if (!channel) {
+    throw new Error(
+      "[vidra] No native message channel is available (expected WKWebView, WebView2, or Android WebView).",
+    );
   }
 
-  send(request: BridgeRequest): void {
-    this.post({ kind: "request", data: request });
-  }
+  const post = (frame: NativeFrame): void => {
+    channel.postMessage(JSON.stringify(frame));
+  };
 
-  sendReverse(response: ReverseResponse): void {
-    this.post({ kind: "reverse", data: response });
-  }
+  return {
+    send: (request) => post({ kind: "request", data: request }),
+    sendReverse: (response) => post({ kind: "reverse", data: response }),
+  };
+};
 
-  private post(frame: NativeFrame): void {
-    this.channel.postMessage(JSON.stringify(frame));
-  }
-}
-
-export class CustomSchemeTransport implements Transport {
-  send(request: BridgeRequest): void {
-    const json = JSON.stringify(request);
-    const encoded = encodeURIComponent(json);
+/**
+ * Transport that navigates a hidden iframe to `vidra://bridge?payload=...` or
+ * `vidra://reverse?payload=...`, which the MAUI host intercepts.
+ */
+export const createCustomSchemeTransport = (): Transport => {
+  const navigate = (route: string, body: unknown): void => {
+    const encoded = encodeURIComponent(JSON.stringify(body));
     const iframe = document.createElement("iframe");
     iframe.style.display = "none";
-    iframe.src = `vidra://bridge?payload=${encoded}`;
+    iframe.src = `vidra://${route}?payload=${encoded}`;
     document.body.appendChild(iframe);
     setTimeout(() => iframe.remove(), 100);
-  }
+  };
 
-  sendReverse(response: ReverseResponse): void {
-    const json = JSON.stringify(response);
-    const encoded = encodeURIComponent(json);
-    const iframe = document.createElement("iframe");
-    iframe.style.display = "none";
-    iframe.src = `vidra://reverse?payload=${encoded}`;
-    document.body.appendChild(iframe);
-    setTimeout(() => iframe.remove(), 100);
-  }
+  return {
+    send: (request) => navigate("bridge", request),
+    sendReverse: (response) => navigate("reverse", response),
+  };
+};
+
+export interface BrowserFallbackOptions {
+  /** Receives the synthetic BROWSER_ONLY error response for each request. */
+  deliver: (response: BridgeResponse) => void;
 }
 
 /**
  * Browser-only stub that immediately resolves with a synthetic response.
  * Enables UI development in a regular browser without the MAUI shell.
  */
-export class BrowserFallbackTransport implements Transport {
-  send(request: BridgeRequest): void {
+export const createBrowserFallbackTransport = ({
+  deliver,
+}: BrowserFallbackOptions): Transport => ({
+  send: (request) => {
     console.warn(
       `[vidra] No native host detected. Browser stub for: ${request.contract}.${request.member}`,
-      request
+      request,
     );
 
     queueMicrotask(() => {
-      const callback = (window as any).__vidra_callback;
-      if (typeof callback === "function") {
-        const response: BridgeResponse = {
-          id: request.id,
-          success: false,
-          error: {
-            code: "BROWSER_ONLY",
-            message: `Native host not available. '${request.contract}.${request.member}' requires the MAUI shell.`,
-          },
-        };
-        callback(response);
-      }
+      deliver({
+        id: request.id,
+        success: false,
+        error: {
+          code: "BROWSER_ONLY",
+          message: `Native host not available. '${request.contract}.${request.member}' requires the MAUI shell.`,
+        },
+      });
     });
-  }
-
-  sendReverse(_response: ReverseResponse): void {
+  },
+  sendReverse: () => {
     console.warn("[vidra] Reverse RPC is not available in browser-only mode.");
-  }
+  },
+});
+
+export interface TransportDetection {
+  transport: Transport;
+  /**
+   * False for the browser fallback: a native channel can become available
+   * shortly after load (the WKWebView script-message handler registers just
+   * after the page loads), so callers keep re-detecting until a real native
+   * transport is found.
+   */
+  cacheable: boolean;
 }
+
+/**
+ * Pick the transport for the current page. Preference order:
+ *   1. the native message channel (WKWebView / WebView2 / Android) when present
+ *   2. the custom-scheme transport when the host marker is set
+ *   3. the browser-only fallback
+ */
+export const detectTransport = (
+  deliver: (response: BridgeResponse) => void,
+): TransportDetection => {
+  if (hasNativeMessageChannel()) {
+    return { transport: createNativeMessageTransport(), cacheable: true };
+  }
+  if (isNativeHost()) {
+    return { transport: createCustomSchemeTransport(), cacheable: true };
+  }
+  return { transport: createBrowserFallbackTransport({ deliver }), cacheable: false };
+};

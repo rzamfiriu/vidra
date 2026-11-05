@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { VidraClient } from "../client.js";
+import {
+  createBridge,
+  createExpectations,
+  installWindowCallbacks,
+  type VidraBridge,
+} from "../client.js";
 import type {
   BridgeRequest,
   BridgeResponse,
@@ -9,20 +14,26 @@ import type {
 } from "../types.js";
 import type { Transport } from "../transport.js";
 
-class MockTransport implements Transport {
-  public sent: BridgeRequest[] = [];
-  public sentReverse: ReverseResponse[] = [];
-  public onSend?: (req: BridgeRequest) => void;
-
-  send = (request: BridgeRequest): void => {
-    this.sent.push(request);
-    this.onSend?.(request);
-  };
-
-  sendReverse = (response: ReverseResponse): void => {
-    this.sentReverse.push(response);
-  };
+interface MockTransport extends Transport {
+  sent: BridgeRequest[];
+  sentReverse: ReverseResponse[];
+  onSend?: (request: BridgeRequest) => void;
 }
+
+const createMockTransport = (): MockTransport => {
+  const transport: MockTransport = {
+    sent: [],
+    sentReverse: [],
+    send: (request) => {
+      transport.sent.push(request);
+      transport.onSend?.(request);
+    },
+    sendReverse: (response) => {
+      transport.sentReverse.push(response);
+    },
+  };
+  return transport;
+};
 
 const deliver = (response: BridgeResponse): void => {
   (window as any).__vidra_callback(response);
@@ -36,25 +47,32 @@ const dispatchReverse = (request: ReverseRequest): void => {
   (window as any).__vidra_invoke(request);
 };
 
-describe("VidraClient unsafe invoke", () => {
+const EMPTY_FINGERPRINT =
+  "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+describe("bridge unsafe invoke", () => {
   let transport: MockTransport;
-  let client: VidraClient;
+  let bridge: VidraBridge;
+  let uninstall: () => void;
 
   beforeEach(() => {
-    transport = new MockTransport();
-    client = new VidraClient({ transport });
+    transport = createMockTransport();
+    bridge = createBridge({ transport });
+    uninstall = installWindowCallbacks(bridge);
   });
+
+  afterEach(() => uninstall());
 
   it("resolves with success data", async () => {
     transport.onSend = (req) => deliver({ id: req.id, success: true, data: { text: "hi" } });
 
-    const result = await client.unsafe.invoke<{ text: string }>("echo", "ping", { text: "hi" });
+    const result = await bridge.unsafe.invoke<{ text: string }>("echo", "ping", { text: "hi" });
     expect(result).toEqual({ text: "hi" });
   });
 
   it("sends the request through the transport", async () => {
     transport.onSend = (req) => deliver({ id: req.id, success: true });
-    await client.unsafe.invoke("echo", "ping", { n: 1 });
+    await bridge.unsafe.invoke("echo", "ping", { n: 1 });
 
     expect(transport.sent).toHaveLength(1);
     expect(transport.sent[0]).toMatchObject({
@@ -73,7 +91,7 @@ describe("VidraClient unsafe invoke", () => {
         error: { code: "NATIVE_CONTRACT_NOT_FOUND", message: "No native contract 'x'" },
       });
 
-    await expect(client.unsafe.invoke("x", "y")).rejects.toThrow(
+    await expect(bridge.unsafe.invoke("x", "y")).rejects.toThrow(
       "[NATIVE_CONTRACT_NOT_FOUND] No native contract 'x'",
     );
   });
@@ -81,13 +99,13 @@ describe("VidraClient unsafe invoke", () => {
   it("rejects with generic message if error body missing", async () => {
     transport.onSend = (req) => deliver({ id: req.id, success: false });
 
-    await expect(client.unsafe.invoke("x", "y")).rejects.toThrow("Unknown native error");
+    await expect(bridge.unsafe.invoke("x", "y")).rejects.toThrow("Unknown native error");
   });
 
   it("rejects with timeout if no response arrives", async () => {
     vi.useFakeTimers();
-    const clientWithTimeout = new VidraClient({ transport, timeout: 50 });
-    const promise = clientWithTimeout.unsafe.invoke("slow", "op");
+    const bridgeWithTimeout = createBridge({ transport, timeout: 50 });
+    const promise = bridgeWithTimeout.unsafe.invoke("slow", "op");
 
     vi.advanceTimersByTime(51);
     await expect(promise).rejects.toThrow(/Timeout after 50ms for slow\.op/);
@@ -101,7 +119,7 @@ describe("VidraClient unsafe invoke", () => {
       setTimeout(() => deliver({ id: req.id, success: true, data: "ok" }), 0);
     };
 
-    const result = await client.unsafe.invoke("echo", "ping").then((r) => {
+    const result = await bridge.unsafe.invoke("echo", "ping").then((r) => {
       spy(r);
       return r;
     });
@@ -111,18 +129,20 @@ describe("VidraClient unsafe invoke", () => {
   });
 });
 
-describe("VidraClient events", () => {
-  let transport: MockTransport;
-  let client: VidraClient;
+describe("bridge events", () => {
+  let bridge: VidraBridge;
+  let uninstall: () => void;
 
   beforeEach(() => {
-    transport = new MockTransport();
-    client = new VidraClient({ transport });
+    bridge = createBridge({ transport: createMockTransport() });
+    uninstall = installWindowCallbacks(bridge);
   });
+
+  afterEach(() => uninstall());
 
   it("delivers events to subscribed handlers", () => {
     const handler = vi.fn();
-    client.unsafe.on<{ x: number }>("test", "tick", handler);
+    bridge.unsafe.on<{ x: number }>("test", "tick", handler);
 
     dispatchEvent({ contract: "test", member: "tick", payload: { x: 1 } });
     dispatchEvent({ contract: "test", member: "tick", payload: { x: 2 } });
@@ -135,8 +155,8 @@ describe("VidraClient events", () => {
   it("supports multiple handlers per event", () => {
     const a = vi.fn();
     const b = vi.fn();
-    client.unsafe.on("test", "tick", a);
-    client.unsafe.on("test", "tick", b);
+    bridge.unsafe.on("test", "tick", a);
+    bridge.unsafe.on("test", "tick", b);
 
     dispatchEvent({ contract: "test", member: "tick", payload: null });
     expect(a).toHaveBeenCalledOnce();
@@ -145,7 +165,7 @@ describe("VidraClient events", () => {
 
   it("returns an unsubscribe function", () => {
     const handler = vi.fn();
-    const off = client.unsafe.on("test", "tick", handler);
+    const off = bridge.unsafe.on("test", "tick", handler);
     off();
 
     dispatchEvent({ contract: "test", member: "tick", payload: null });
@@ -159,8 +179,8 @@ describe("VidraClient events", () => {
     });
     const good = vi.fn();
 
-    client.unsafe.on("test", "tick", bad);
-    client.unsafe.on("test", "tick", good);
+    bridge.unsafe.on("test", "tick", bad);
+    bridge.unsafe.on("test", "tick", good);
 
     dispatchEvent({ contract: "test", member: "tick", payload: null });
 
@@ -176,14 +196,18 @@ describe("VidraClient events", () => {
   });
 });
 
-describe("VidraClient reverse RPC", () => {
+describe("bridge reverse RPC", () => {
   let transport: MockTransport;
-  let client: VidraClient;
+  let bridge: VidraBridge;
+  let uninstall: () => void;
 
   beforeEach(() => {
-    transport = new MockTransport();
-    client = new VidraClient({ transport });
+    transport = createMockTransport();
+    bridge = createBridge({ transport });
+    uninstall = installWindowCallbacks(bridge);
   });
+
+  afterEach(() => uninstall());
 
   it("responds with JS_HANDLER_NOT_FOUND when no handler is registered", async () => {
     dispatchReverse({ id: "rev_1", contract: "dialog", member: "confirm" });
@@ -198,7 +222,7 @@ describe("VidraClient reverse RPC", () => {
   });
 
   it("dispatches matching handlers and returns their result", async () => {
-    client.unsafe.handle<{ message: string }, boolean>(
+    bridge.unsafe.handle<{ message: string }, boolean>(
       "dialog",
       "confirm",
       async () => true,
@@ -215,7 +239,7 @@ describe("VidraClient reverse RPC", () => {
   });
 
   it("wraps handler exceptions as JS_HANDLER_ERROR", async () => {
-    client.unsafe.handle("test", "boom", () => {
+    bridge.unsafe.handle("test", "boom", () => {
       throw new Error("something broke");
     });
     dispatchReverse({ id: "rev_3", contract: "test", member: "boom" });
@@ -229,7 +253,7 @@ describe("VidraClient reverse RPC", () => {
   });
 
   it("unsubscribing a handler restores the JS_HANDLER_NOT_FOUND response", async () => {
-    const unsubscribe = client.unsafe.handle("dialog", "confirm", () => true);
+    const unsubscribe = bridge.unsafe.handle("dialog", "confirm", () => true);
     unsubscribe();
 
     dispatchReverse({ id: "rev_4", contract: "dialog", member: "confirm" });
@@ -242,19 +266,20 @@ describe("VidraClient reverse RPC", () => {
   });
 
   it("rejects duplicate handler registrations", () => {
-    client.unsafe.handle("dialog", "confirm", () => true);
+    bridge.unsafe.handle("dialog", "confirm", () => true);
 
     expect(() =>
-      client.unsafe.handle("dialog", "confirm", () => false),
+      bridge.unsafe.handle("dialog", "confirm", () => false),
     ).toThrow("already registered");
   });
 });
 
-describe("VidraClient.capabilities", () => {
+describe("bridge.capabilities", () => {
   it("invokes the reserved __bridge.capabilities method", async () => {
-    const transport = new MockTransport();
+    const transport = createMockTransport();
+    const bridge = createBridge({ transport });
     transport.onSend = (req) =>
-      deliver({
+      bridge.host.deliverResponse({
         id: req.id,
         success: true,
         data: {
@@ -262,9 +287,8 @@ describe("VidraClient.capabilities", () => {
           nativeContracts: { echo: { methods: ["ping"], events: [] } },
         },
       });
-    const client = new VidraClient({ transport });
 
-    const caps = await client.capabilities();
+    const caps = await bridge.capabilities();
     expect(caps.nativeContracts.echo.methods).toEqual(["ping"]);
     expect(transport.sent[0]).toMatchObject({
       contract: "__bridge",
@@ -273,80 +297,163 @@ describe("VidraClient.capabilities", () => {
   });
 });
 
-describe("VidraClient transport selection", () => {
+describe("bridge transport selection", () => {
   afterEach(() => {
     delete (window as any).__vidra_native;
   });
 
   it("uses the explicit transport when provided", async () => {
-    const transport = new MockTransport();
-    transport.onSend = (req) => deliver({ id: req.id, success: true });
-    const client = new VidraClient({ transport });
+    const transport = createMockTransport();
+    const bridge = createBridge({ transport });
+    transport.onSend = (req) => bridge.host.deliverResponse({ id: req.id, success: true });
 
-    await client.unsafe.invoke("x", "y");
+    await bridge.unsafe.invoke("x", "y");
     expect(transport.sent).toHaveLength(1);
+  });
+
+  it("falls back to a browser stub that delivers to this bridge, not to window", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const bridge = createBridge();
+    const stray = vi.fn();
+    (window as any).__vidra_callback = stray;
+
+    await expect(bridge.unsafe.invoke("fs", "readText")).rejects.toThrow("[BROWSER_ONLY]");
+
+    expect(stray).not.toHaveBeenCalled();
+    delete (window as any).__vidra_callback;
+    warnSpy.mockRestore();
   });
 });
 
-describe("VidraClient protocol negotiation", () => {
-  const emptyFingerprint =
-    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+describe("installWindowCallbacks", () => {
+  afterEach(() => {
+    for (const name of [
+      "__vidra_callback",
+      "__vidra_onevent",
+      "__vidra_invoke",
+      "__vidra_initialize",
+    ]) {
+      delete (window as any)[name];
+    }
+  });
 
-  it("accepts matching protocol and manifest fingerprints", () => {
-    new VidraClient({ transport: new MockTransport() });
+  it("installs the four host entry points", () => {
+    const bridge = createBridge({ transport: createMockTransport() });
+    const uninstall = installWindowCallbacks(bridge);
 
-    expect(() =>
-      (window as any).__vidra_initialize({
-        protocolVersion: 2,
-        coreFingerprint: emptyFingerprint,
-        appFingerprint: emptyFingerprint,
-        accessFingerprint: "access",
-      }),
-    ).not.toThrow();
+    expect((window as any).__vidra_callback).toBe(bridge.host.deliverResponse);
+    expect((window as any).__vidra_onevent).toBe(bridge.host.dispatchEvent);
+    expect((window as any).__vidra_invoke).toBe(bridge.host.invokeHandler);
+    expect((window as any).__vidra_initialize).toBe(bridge.host.initialize);
+
+    uninstall();
+    expect((window as any).__vidra_callback).toBeUndefined();
+    expect((window as any).__vidra_initialize).toBeUndefined();
+  });
+
+  it("uninstalling leaves callbacks installed later by another bridge in place", () => {
+    const first = createBridge({ transport: createMockTransport() });
+    const second = createBridge({ transport: createMockTransport() });
+    const uninstallFirst = installWindowCallbacks(first);
+    const uninstallSecond = installWindowCallbacks(second);
+
+    uninstallFirst();
+
+    expect((window as any).__vidra_callback).toBe(second.host.deliverResponse);
+    uninstallSecond();
+    expect((window as any).__vidra_callback).toBeUndefined();
+  });
+});
+
+describe("expectations", () => {
+  it("records a declared fingerprint per scope", () => {
+    const expectations = createExpectations();
+    expectations.declare("core", "core-hash");
+
+    expect(expectations.get("core")).toBe("core-hash");
+    expect(expectations.get("app")).toBeUndefined();
+  });
+
+  it("accepts re-declaring the same value", () => {
+    const expectations = createExpectations();
+    expectations.declare("app", "app-hash");
+
+    expect(() => expectations.declare("app", "app-hash")).not.toThrow();
+  });
+
+  it("rejects a conflicting value for an already-declared scope", () => {
+    const expectations = createExpectations();
+    expectations.declare("app", "app-hash");
+
+    expect(() => expectations.declare("app", "other-hash")).toThrow(
+      /Conflicting app fingerprint declarations/,
+    );
+  });
+});
+
+describe("bridge protocol negotiation", () => {
+  const handshake = (overrides: Partial<Parameters<VidraBridge["host"]["initialize"]>[0]>) => ({
+    protocolVersion: 2,
+    coreFingerprint: EMPTY_FINGERPRINT,
+    appFingerprint: EMPTY_FINGERPRINT,
+    accessFingerprint: "access",
+    ...overrides,
+  });
+
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("accepts matching protocol and empty manifest fingerprints when nothing is declared", () => {
+    const bridge = createBridge({ transport: createMockTransport() });
+
+    expect(() => bridge.host.initialize(handshake({}))).not.toThrow();
   });
 
   it("fails visibly when protocol versions differ", () => {
-    new VidraClient({ transport: new MockTransport() });
+    const bridge = createBridge({ transport: createMockTransport() });
 
-    expect(() =>
-      (window as any).__vidra_initialize({
-        protocolVersion: 1,
-        coreFingerprint: emptyFingerprint,
-        appFingerprint: emptyFingerprint,
-        accessFingerprint: "access",
-      }),
-    ).toThrow("Bridge contract mismatch");
+    expect(() => bridge.host.initialize(handshake({ protocolVersion: 1 }))).toThrow(
+      "Bridge contract mismatch",
+    );
     expect(document.querySelector('[role="alert"]')?.textContent).toContain(
       "protocol host=1 sdk=2",
     );
   });
 
-  it("compares generated core and app fingerprints", () => {
-    const client = new VidraClient({ transport: new MockTransport() });
-    client.registerGeneratedManifest("core", "core-hash");
-    client.registerGeneratedManifest("app", "app-hash");
+  it("compares declared core and app fingerprints", () => {
+    const expectations = createExpectations();
+    expectations.declare("core", "core-hash");
+    expectations.declare("app", "app-hash");
+    const bridge = createBridge({ transport: createMockTransport(), expectations });
 
     expect(() =>
-      (window as any).__vidra_initialize({
-        protocolVersion: 2,
-        coreFingerprint: "core-hash",
-        appFingerprint: "app-hash",
-        accessFingerprint: "access",
-      }),
+      bridge.host.initialize(
+        handshake({ coreFingerprint: "core-hash", appFingerprint: "app-hash" }),
+      ),
     ).not.toThrow();
+    expect(() =>
+      bridge.host.initialize(
+        handshake({ coreFingerprint: "core-hash", appFingerprint: "stale" }),
+      ),
+    ).toThrow("app contract fingerprint");
   });
 
   it("rejects a frontend built for a different access policy", () => {
-    const client = new VidraClient({ transport: new MockTransport() });
-    client.registerExpectedAccessFingerprint("expected-access");
+    const expectations = createExpectations();
+    expectations.declare("access", "expected-access");
+    const bridge = createBridge({ transport: createMockTransport(), expectations });
 
     expect(() =>
-      (window as any).__vidra_initialize({
-        protocolVersion: 2,
-        coreFingerprint: emptyFingerprint,
-        appFingerprint: emptyFingerprint,
-        accessFingerprint: "installed-access",
-      }),
+      bridge.host.initialize(handshake({ accessFingerprint: "installed-access" })),
     ).toThrow("bridge access fingerprint");
+  });
+
+  it("skips the access check when no access fingerprint is declared", () => {
+    const bridge = createBridge({ transport: createMockTransport() });
+
+    expect(() =>
+      bridge.host.initialize(handshake({ accessFingerprint: "anything" })),
+    ).not.toThrow();
   });
 });

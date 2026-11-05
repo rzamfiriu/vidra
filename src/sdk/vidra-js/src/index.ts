@@ -1,5 +1,16 @@
-export { VidraClient } from "./client.js";
-export type { UnsafeVidraClient, VidraClientOptions } from "./client.js";
+export {
+  createBridge,
+  createExpectations,
+  installWindowCallbacks,
+} from "./client.js";
+export type {
+  BridgeOptions,
+  Expectations,
+  ExpectationScope,
+  HostEntryPoints,
+  UnsafeVidra,
+  VidraBridge,
+} from "./client.js";
 export type {
   BridgeRequest,
   BridgeResponse,
@@ -14,16 +25,24 @@ export type {
   JsHandler,
 } from "./types.js";
 export {
-  CustomSchemeTransport,
-  BrowserFallbackTransport,
-  NativeMessageTransport,
+  createBrowserFallbackTransport,
+  createCustomSchemeTransport,
+  createNativeMessageTransport,
+  detectTransport,
   hasNativeMessageChannel,
+  isNativeHost,
   NATIVE_CHANNEL,
 } from "./transport.js";
-export type { Transport } from "./transport.js";
-// Re-export the default singleton (lives in its own module to avoid
-// circular dependencies with the generated proxy barrel).
-export { vidra } from "./singleton.js";
+export type {
+  BrowserFallbackOptions,
+  NativePoster,
+  Transport,
+  TransportDetection,
+} from "./transport.js";
+// The page's bridge lives in its own module to avoid circular dependencies
+// with the generated barrel.
+export { bridge, expectations, vidra } from "./bridge.js";
+export type { Vidra } from "./bridge.js";
 
-// Re-export generated typed proxies for built-in modules.
+// Re-export generated typed contracts for built-in modules.
 export * from "./generated/index.js";
