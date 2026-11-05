@@ -12,6 +12,8 @@ import type {
 import { type Transport, detectTransport } from "./transport.js";
 
 const PROTOCOL_VERSION = 2;
+// SHA-256 of an empty byte sequence (`printf '' | shasum -a 256`).
+// The host uses this value when a manifest scope contains no contracts.
 const EMPTY_FINGERPRINT =
   "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
