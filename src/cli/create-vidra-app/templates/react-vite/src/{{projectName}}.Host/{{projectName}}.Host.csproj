@@ -17,6 +17,13 @@
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">21.0</SupportedOSPlatformVersion>
     <DefineConstants Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' And '$(VidraAndroidTestRuntime)' == 'true'">$(DefineConstants);VIDRA_ANDROID_TEST_RUNTIME</DefineConstants>
     <UseMaui>true</UseMaui>
+    <!--
+      Left unset, MauiVersion is whatever the installed maui workload ships,
+      which can be older than the Microsoft.Maui.Controls floor that the
+      Vidra packages declare; restore then fails with NU1605. Keep this at or
+      above that floor.
+    -->
+    <MauiVersion>10.0.120</MauiVersion>
     <SingleProject>true</SingleProject>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
