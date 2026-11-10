@@ -22,8 +22,31 @@ public static class VidraMauiExtensions
     public static MauiAppBuilder UseVidra(
         this MauiAppBuilder builder,
         Action<BridgeDispatcher>? configureModules = null,
+        Action<VidraBridgeOptions>? configureBridge = null) =>
+        builder.UseVidra(
+            (dispatcher, _) => configureModules?.Invoke(dispatcher),
+            configureBridge);
+
+    /// <summary>
+    /// Registers the Vidra bridge, built-in modules, and WebView infrastructure,
+    /// handing <paramref name="configureModules"/> the app's service provider so
+    /// custom modules can be resolved from the MAUI container:
+    /// <c>dispatcher.Register(services.GetRequiredService&lt;NotesModule&gt;())</c>.
+    /// </summary>
+    /// <remarks>
+    /// The callback runs once, and <paramref name="configureModules"/> receives
+    /// the root provider: every module lives as long as the app. A module that
+    /// takes a scoped service, such as a <c>DbContext</c>, therefore holds one
+    /// instance for the whole process; take a factory such as
+    /// <c>IDbContextFactory&lt;T&gt;</c> instead.
+    /// </remarks>
+    public static MauiAppBuilder UseVidra(
+        this MauiAppBuilder builder,
+        Action<BridgeDispatcher, IServiceProvider> configureModules,
         Action<VidraBridgeOptions>? configureBridge = null)
     {
+        ArgumentNullException.ThrowIfNull(configureModules);
+
         var bridgeOptions = new VidraBridgeOptions();
         configureBridge?.Invoke(bridgeOptions);
         builder.Services.AddSingleton(bridgeOptions);
@@ -71,7 +94,7 @@ public static class VidraMauiExtensions
                 RuntimeEvents.HotReloaded.Contract,
                 RuntimeEvents.HotReloaded.Member);
 
-            configureModules?.Invoke(dispatcher);
+            configureModules(dispatcher, sp);
             dispatcher.ValidateAccessPolicy();
             return dispatcher;
         });

@@ -7,7 +7,7 @@
     Non-packable projects (the demo host app, the CodeGen tool) ignore these.
   -->
   <PropertyGroup>
-    <VidraVersion>0.6.1</VidraVersion>
+    <VidraVersion>0.6.2</VidraVersion>
     <Version>$(VidraVersion)</Version>
     <Authors>rzamfiriu</Authors>
     <Company>Vidra</Company>
