@@ -1060,3 +1060,15 @@ export const printXcodeHint = (): void => {
   console.error(fixLine("vidra doctor", "check:"));
   console.error();
 };
+
+/**
+ * Prints the hint for the first known toolchain problem in build output.
+ * Returns false when nothing matched, so callers can fall back to a generic hint.
+ */
+export const printToolchainHint = (output: string): boolean => {
+  if (looksLikeMissingWorkload(output)) printWorkloadHint();
+  else if (looksLikeXcodeTooOld(output)) printXcodeTooOldHint();
+  else if (looksLikeMissingXcode(output)) printXcodeHint();
+  else return false;
+  return true;
+};
