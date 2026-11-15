@@ -170,6 +170,14 @@ describe("iosTarget", () => {
   });
 });
 
+describe("AOT intermediates", () => {
+  it("are discarded for the runtime identifier each iOS target builds", () => {
+    expect(iosPublishArgs({ codesignKey: "k", provisioningProfile: "p" }))
+      .toContain(iosTarget.discardIntermediates);
+    expect(iosSimulatorTarget.extraPublishArgs).toContain(iosSimulatorTarget.discardIntermediates);
+  });
+});
+
 describe("iosSimulatorTarget", () => {
   it("builds rather than publishes, for this Mac's simulator architecture", () => {
     expect(iosSimulatorTarget.dotnetVerb).toBe("build");

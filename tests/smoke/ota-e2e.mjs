@@ -369,6 +369,18 @@ function serveFeed() {
   return child;
 }
 
+/**
+ * The app's own lines and its errors; everything, when it died without a
+ * proof, because a native crash report spans many lines and few say "error".
+ */
+function printLaunchOutput(output, proofWritten) {
+  for (const line of output.split(/\r?\n/)) {
+    if (!proofWritten || line.includes("[vidra]") || line.includes("error")) {
+      console.log(`    ${line}`);
+    }
+  }
+}
+
 /** Runs the app once and returns the proof it wrote. */
 function launch(name, { timeout = 60 } = {}) {
   if (androidAppId) return launchAndroid(name, timeout);
@@ -393,9 +405,7 @@ function launch(name, { timeout = 60 } = {}) {
   });
 
   const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
-  for (const line of output.split(/\r?\n/)) {
-    if (line.includes("[vidra]") || line.includes("error")) console.log(`    ${line}`);
-  }
+  printLaunchOutput(output, fs.existsSync(proofPath));
 
   if (!fs.existsSync(proofPath)) {
     throw new Error(`launch ${name} wrote no proof (exit=${result.status}, signal=${result.signal})`);
@@ -446,9 +456,7 @@ function launchIosSimulator(name, timeout) {
   );
 
   const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
-  for (const line of output.split(/\r?\n/)) {
-    if (line.includes("[vidra]") || line.includes("error")) console.log(`    ${line}`);
-  }
+  printLaunchOutput(output, fs.existsSync(proofPath));
   if (!fs.existsSync(proofPath)) {
     throw new Error(`launch ${name} wrote no proof (exit=${result.status}, signal=${result.signal})`);
   }

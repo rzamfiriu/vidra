@@ -69,8 +69,8 @@ credentials exist.
 every TFM the OS lists: Mac Catalyst, iOS and Android on macOS, Windows and
 Android on Windows. Those commands need the Android workload, JDK 17, and the
 Android SDK, and on macOS the iOS workload and an iOS Simulator runtime. Even a
-target-specific build needs every listed TFM's workload, because restore
-evaluates all of them. Run `vidra doctor --target android` (and `--target ios`
+target-specific build needs the platform workload (`android`, `ios`) of every
+other listed TFM, because restore evaluates all of them. Run `vidra doctor --target android` (and `--target ios`
 on macOS) before a full local pack to check the additional toolchain.
 
 ```bash

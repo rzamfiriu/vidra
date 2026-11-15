@@ -1110,6 +1110,11 @@ const stepDotnetPublish = (
   // artifact, its metadata and any future updater all agree on one number.
   const version = resolveAppVersion(project.root, project.csprojPath);
   const verb = target.dotnetVerb ?? "publish";
+  if (target.discardIntermediates) {
+    fs.removeSync(
+      path.join(project.hostDir, "obj", "Release", target.framework, target.discardIntermediates),
+    );
+  }
   try {
     execFileSync(
       "dotnet",

@@ -1259,3 +1259,12 @@ jobs:
           name: ios-simulator-proofs
           path: ${{ runner.temp }}/ios-ota-work/*.json
           if-no-files-found: ignore
+
+      # A Simulator app that crashes leaves its report on the host Mac.
+      - name: Upload Simulator crash reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-simulator-crash-reports
+          path: ~/Library/Logs/DiagnosticReports/VidraSmoke*
+          if-no-files-found: ignore

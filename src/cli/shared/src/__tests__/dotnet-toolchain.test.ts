@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   hasNet10Sdk,
   mauiWorkloadFor,
+  missingWorkloadsFor,
   newestNet10Sdk,
   outputMentionsMaui,
   outputMentionsMauiTarget,
@@ -70,6 +71,42 @@ describe("projectMauiTargets", () => {
     expect(
       projectMauiTargets("<TargetFrameworks>net10.0;net10.0-ios</TargetFrameworks>", "darwin"),
     ).toEqual(["ios"]);
+  });
+});
+
+describe("missingWorkloadsFor", () => {
+  const windowsRunner = [
+    "Installed Workload Id      Manifest Version         Installation Source",
+    "------------------------------------------------------------------------",
+    "android                    36.1.118/10.0.100        SDK 10.0.400",
+    "ios                        27.2.10000/10.0.100      SDK 10.0.400",
+    "maccatalyst                27.2.10000/10.0.100      SDK 10.0.400",
+    "maui-windows               10.0.110/10.0.100        SDK 10.0.400",
+  ].join("\n");
+
+  it("needs only the SDK workload for a platform that is restored, not built", () => {
+    expect(missingWorkloadsFor(windowsRunner, "windows", ["windows", "android"])).toEqual([]);
+  });
+
+  it("still needs the MAUI workload for the platform being built", () => {
+    expect(missingWorkloadsFor(windowsRunner, "android", ["windows", "android"])).toEqual([
+      "maui-android",
+    ]);
+  });
+
+  it("names the SDK workload of a restored platform that has none", () => {
+    expect(
+      missingWorkloadsFor("maui-maccatalyst  10.0.0  SDK\n", "macos", ["macos", "ios", "android"]),
+    ).toEqual(["ios", "android"]);
+  });
+
+  it("asks nothing of a Windows TFM that is only restored", () => {
+    expect(missingWorkloadsFor("maui-android  10.0.0  SDK\n", "android", ["windows", "android"]))
+      .toEqual([]);
+  });
+
+  it("is satisfied by the umbrella workload", () => {
+    expect(missingWorkloadsFor("[maui]\n", "macos", ["macos", "ios", "android"])).toEqual([]);
   });
 });
 

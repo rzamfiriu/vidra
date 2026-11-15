@@ -23,7 +23,7 @@ import {
   DOTNET,
   isMauiTarget,
   mauiWorkloadFor,
-  outputMentionsMauiTarget,
+  missingWorkloadsFor,
   projectMauiTargets,
   type MauiTarget,
   type Requirement,
@@ -130,19 +130,17 @@ const checkMauiWorkload = (
   // OS, so a project in the current directory widens what counts as installed.
   const csproj = tryDetectProject(process.cwd())?.csprojPath;
   const projectTargets = csproj ? projectMauiTargets(readIfPresent(csproj) ?? "") : [];
-  const missing = [...new Set([target, ...projectTargets])].filter(
-    (each) => !outputMentionsMauiTarget(workloadList.stdout, each),
-  );
+  const missing = missingWorkloadsFor(workloadList.stdout, target, projectTargets);
   if (missing.length === 0) {
     return { name, status: "ok", detail: "installed" };
   }
   return {
     name,
     status: "missing",
-    detail: missing.includes(target)
+    detail: missing.includes(mauiWorkloadFor(target))
       ? "not installed"
-      : `${missing.map(mauiWorkloadFor).join(", ")} not installed, and this project's restore needs it`,
-    fix: `dotnet workload install ${missing.map(mauiWorkloadFor).join(" ")}`,
+      : `${missing.join(", ")} not installed, and this project's restore needs it`,
+    fix: `dotnet workload install ${missing.join(" ")}`,
   };
 };
 

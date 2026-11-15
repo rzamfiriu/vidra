@@ -20,6 +20,11 @@ export interface BuildTarget {
   /** `build` where the SDK refuses to `publish` what this target makes. */
   dotnetVerb?: "publish" | "build";
   extraPublishArgs?: string[];
+  /**
+   * A directory under the host's `obj/Release/<framework>` that must not
+   * survive into the next build; deleted before each one.
+   */
+  discardIntermediates?: string;
   findBundle(publishDir: string, projectName: string): string | null;
   package(appPath: string, outputDir: string, meta: AppMeta): Promise<string[]>;
 }

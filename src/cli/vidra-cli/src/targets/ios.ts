@@ -53,6 +53,7 @@ export const iosTarget: BuildTarget = {
   artifactExtensions: [".ipa"],
   packageLabel: "package IPA",
   supportsNativeUpdates: false,
+  discardIntermediates: "ios-arm64",
 
   findBundle(publishDir: string): string | null {
     return findEntries(path.join(publishDir, "ios-arm64"), (name, isDirectory) =>
@@ -88,6 +89,7 @@ export const iosSimulatorTarget: BuildTarget = {
     iosSimulatorRuntimeIdentifier(),
     "-p:VidraAllowLocalNetworking=true",
   ],
+  discardIntermediates: iosSimulatorRuntimeIdentifier(),
 
   findBundle(publishDir: string): string | null {
     return findEntries(
