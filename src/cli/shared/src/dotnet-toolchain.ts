@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { execFileSync } from "node:child_process";
 import prompts from "prompts";
 import { run } from "./exec.js";
@@ -50,19 +51,27 @@ export const newestNet10Sdk = (listSdksOutput: string): string | undefined =>
 export const outputMentionsMaui = (workloadListOutput: string): boolean =>
   MAUI_WORKLOAD.test(workloadListOutput);
 
-export type MauiTarget = "macos" | "windows" | "android";
+/** A platform a Vidra app builds for. The one list every command shares. */
+export type MauiTarget = "macos" | "windows" | "android" | "ios";
+
+export const MAUI_TARGETS: readonly MauiTarget[] = ["macos", "windows", "android", "ios"];
+
+export const isMauiTarget = (value: unknown): value is MauiTarget =>
+  typeof value === "string" && (MAUI_TARGETS as readonly string[]).includes(value);
+
+const TARGET_WORKLOADS: Record<MauiTarget, string> = {
+  macos: "maui-maccatalyst",
+  windows: "maui-windows",
+  android: "maui-android",
+  ios: "maui-ios",
+};
 
 export const outputMentionsMauiTarget = (
   workloadListOutput: string,
   target?: MauiTarget,
 ): boolean => {
   if (!target) return outputMentionsMaui(workloadListOutput);
-  const targetWorkload =
-    target === "macos"
-      ? "maui-maccatalyst"
-      : target === "windows"
-        ? "maui-windows"
-        : "maui-android";
+  const targetWorkload = TARGET_WORKLOADS[target];
   return new RegExp(
     `(?:\\[(?:maui|${targetWorkload})\\]|^\\s*(?:maui|${targetWorkload})\\s)`,
     "m",
@@ -97,6 +106,59 @@ export const checkDotnetSdk = (): Requirement => {
   };
 };
 
+const TFM_PLATFORMS: Record<string, MauiTarget> = {
+  maccatalyst: "macos",
+  windows: "windows",
+  android: "android",
+  ios: "ios",
+};
+
+const MSBUILD_OS: Partial<Record<NodeJS.Platform, string>> = {
+  darwin: "osx",
+  win32: "windows",
+  linux: "linux",
+};
+
+/**
+ * Every platform the project targets on this OS. Restore evaluates all of a
+ * project's target frameworks, so building one of them still needs the
+ * workload of every other: a Mac with only `maui-maccatalyst` cannot build the
+ * Catalyst app of a project that also targets `net10.0-ios`.
+ */
+export const projectMauiTargets = (
+  csproj: string,
+  platform: NodeJS.Platform = process.platform,
+): MauiTarget[] => {
+  const os = MSBUILD_OS[platform];
+  const found = new Set<MauiTarget>();
+  for (const match of csproj.matchAll(
+    /<TargetFrameworks?(?:\s+Condition="([^"]*)")?\s*>([^<]*)<\/TargetFrameworks?>/g,
+  )) {
+    const [, condition, frameworks] = match;
+    if (condition && !(os && condition.includes(`IsOSPlatform('${os}')`))) continue;
+    for (const framework of frameworks.split(";")) {
+      const target = TFM_PLATFORMS[framework.trim().match(/^net[\d.]+-([a-z]+)/)?.[1] ?? ""];
+      if (target) found.add(target);
+    }
+  }
+  return [...found];
+};
+
+const readProjectMauiTargets = (csprojPath: string): MauiTarget[] => {
+  try {
+    return projectMauiTargets(fs.readFileSync(csprojPath, "utf8"));
+  } catch {
+    return [];
+  }
+};
+
+/** The platform workloads a build of `target` needs that are not installed. */
+const missingWorkloads = (target: MauiTarget, csprojPath?: string): MauiTarget[] => {
+  const workloadList = run(DOTNET, ["workload", "list"]).stdout;
+  const needed = new Set([target, ...(csprojPath ? readProjectMauiTargets(csprojPath) : [])]);
+  return [...needed].filter((each) => !outputMentionsMauiTarget(workloadList, each));
+};
+
 export const isMauiWorkloadInstalled = (target?: MauiTarget): boolean =>
   outputMentionsMauiTarget(
     run(DOTNET, ["workload", "list"]).stdout,
@@ -106,23 +168,18 @@ export const isMauiWorkloadInstalled = (target?: MauiTarget): boolean =>
 // --- Workload gate -----------------------------------------------------------
 
 export const mauiWorkloadFor = (target?: MauiTarget): string =>
-  target === "android"
-    ? "maui-android"
-    : target === "windows"
-      ? "maui-windows"
-      : target === "macos"
-        ? "maui-maccatalyst"
-        : "maui";
+  target ? TARGET_WORKLOADS[target] : "maui";
 
 const installWorkload = (
   csprojPath?: string,
-  target?: MauiTarget,
+  targets: MauiTarget[] = [],
 ): boolean => {
-  // Daily target-specific commands install only their platform component.
-  // The scaffolder has no selected target, so it restores the project's full
-  // TFM set; the umbrella workload is the fallback when neither is in scope.
-  const args = target
-    ? ["workload", "install", mauiWorkloadFor(target)]
+  // Daily target-specific commands install only the platform components the
+  // project is missing. The scaffolder has no selected target, so it restores
+  // the project's full TFM set; the umbrella workload is the fallback when
+  // neither is in scope.
+  const args = targets.length > 0
+    ? ["workload", "install", ...targets.map(mauiWorkloadFor)]
     : csprojPath
       ? ["workload", "restore", csprojPath]
       : ["workload", "install", "maui"];
@@ -155,7 +212,7 @@ const installWorkload = (
       ),
     );
     console.error(
-      fixLine(`sudo dotnet workload install ${mauiWorkloadFor(target)}`),
+      fixLine(`sudo ${DOTNET} ${args.join(" ")}`),
     );
     console.error();
     return false;
@@ -191,14 +248,23 @@ export const ensureMauiWorkload = async (opts: {
   // SDK present but unverifiable — let the real build surface any error.
   if (dotnet.status === "unknown") return true;
 
-  if (isMauiWorkloadInstalled(opts.target)) return true;
+  const missing = opts.target ? missingWorkloads(opts.target, opts.csprojPath) : [];
+  const installed = (): boolean =>
+    opts.target
+      ? missingWorkloads(opts.target, opts.csprojPath).length === 0
+      : isMauiWorkloadInstalled();
+  if (opts.target ? missing.length === 0 : isMauiWorkloadInstalled()) return true;
 
   console.log();
   console.log(
     row({
       glyph: "error",
       label: ".NET MAUI workload",
-      detail: dim("required but not installed"),
+      detail: dim(
+        missing.length > 0
+          ? `${missing.map(mauiWorkloadFor).join(", ")} required but not installed`
+          : "required but not installed",
+      ),
     }),
   );
 
@@ -217,10 +283,7 @@ export const ensureMauiWorkload = async (opts: {
       install = false;
     }
     if (install) {
-      if (
-        installWorkload(opts.csprojPath, opts.target)
-        && isMauiWorkloadInstalled(opts.target)
-      ) {
+      if (installWorkload(opts.csprojPath, missing) && installed()) {
         console.log(
           row({
             glyph: "done",
@@ -235,7 +298,12 @@ export const ensureMauiWorkload = async (opts: {
   }
 
   console.log(
-    fixLine(`dotnet workload install ${mauiWorkloadFor(opts.target)}`, "run:"),
+    fixLine(
+      `dotnet workload install ${
+        missing.length > 0 ? missing.map(mauiWorkloadFor).join(" ") : mauiWorkloadFor()
+      }`,
+      "run:",
+    ),
   );
   console.log(fixLine(MAUI_DOCS, "docs:"));
   return false;

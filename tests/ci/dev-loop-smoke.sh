@@ -3,7 +3,7 @@
 # `dotnet watch`, the app actually launches and its page answers the bridge, and
 # a C# edit puts a fresh build of it back on screen.
 #
-# Usage: dev-loop-smoke.sh <path/to/scaffolded/app> <path/to/cli.js> <macos|windows>
+# Usage: dev-loop-smoke.sh <path/to/scaffolded/app> <path/to/cli.js> <macos|windows|ios>
 #
 # The C# dev loop is the headline feature of the 0.3 line and had no automated
 # coverage at all — unit tests cover argument construction and log

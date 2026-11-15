@@ -21,7 +21,11 @@ import { run, type RunResult } from "@vidra-dev/cli-shared/exec";
 import {
   checkDotnetSdk,
   DOTNET,
+  isMauiTarget,
+  mauiWorkloadFor,
   outputMentionsMauiTarget,
+  projectMauiTargets,
+  type MauiTarget,
   type Requirement,
   type RequirementStatus,
 } from "@vidra-dev/cli-shared/dotnet-toolchain";
@@ -29,6 +33,13 @@ import { parseArgs } from "@vidra-dev/cli-shared/utils";
 import { rejectUnknownFlags } from "./help.js";
 import { DOCTOR } from "./commands/specs.js";
 import { resolveAndroidSigningConfig } from "./targets/android.js";
+import {
+  findDevelopmentProfile,
+  resolveAppStoreConnectKey,
+  resolveIosSigningConfig,
+} from "./targets/ios.js";
+import { listDevices, type IosDevice } from "./ios-devices.js";
+import { readApplicationId } from "./native-update.js";
 
 // --- Text scanning helpers ---------------------------------------------------
 
@@ -64,12 +75,13 @@ const MISSING_WORKLOAD_SIGNATURES: readonly RegExp[] = [
   /maui-maccatalyst/i,
   /maui-windows/i,
   /maui-android/i,
+  /maui-ios/i,
   /to\s+install\s+the\s+.*workload/i,
 ];
 
 /**
- * Full Xcode.app is missing. Mac Catalyst builds need it, not just the Command
- * Line Tools, and fail this way from Xamarin.Shared.targets when
+ * Full Xcode.app is missing. Mac Catalyst and iOS builds need it, not just the
+ * Command Line Tools, and fail this way from Xamarin.Shared.targets when
  * `xcode-select -p` points at the CLT.
  */
 const MISSING_XCODE_SIGNATURES: readonly RegExp[] = [
@@ -81,11 +93,11 @@ const MISSING_XCODE_SIGNATURES: readonly RegExp[] = [
 /**
  * The installed Xcode is older than the platform SDK the MAUI workload tracks.
  * Surfaces as MT0180 from the macios linker Setup step ("requires the
- * MacCatalyst X SDK (shipped with Xcode Y)").
+ * MacCatalyst X SDK (shipped with Xcode Y)", or the iOS one).
  */
 const OUTDATED_XCODE_SIGNATURES: readonly RegExp[] = [
   /error\s+MT0180/i,
-  /requires\s+the\s+MacCatalyst\s+\S+\s+SDK\s+\(shipped\s+with\s+Xcode/i,
+  /requires\s+the\s+(?:MacCatalyst|iOS)\s+\S+\s+SDK\s+\(shipped\s+with\s+Xcode/i,
 ];
 
 /** Heuristic: does build output indicate the MAUI workload is missing? */
@@ -114,20 +126,23 @@ const checkMauiWorkload = (
   if (!workloadList.found) {
     return { name, status: "unknown", detail: "could not query workloads" };
   }
-  const hasRequiredWorkload = outputMentionsMauiTarget(
-    workloadList.stdout,
-    target,
+  // Restore needs a workload for every framework the project targets on this
+  // OS, so a project in the current directory widens what counts as installed.
+  const csproj = tryDetectProject(process.cwd())?.csprojPath;
+  const projectTargets = csproj ? projectMauiTargets(readIfPresent(csproj) ?? "") : [];
+  const missing = [...new Set([target, ...projectTargets])].filter(
+    (each) => !outputMentionsMauiTarget(workloadList.stdout, each),
   );
-  if (hasRequiredWorkload) {
+  if (missing.length === 0) {
     return { name, status: "ok", detail: "installed" };
   }
   return {
     name,
     status: "missing",
-    detail: "not installed",
-    fix: target === "android"
-      ? "dotnet workload install maui-android"
-      : "dotnet workload install maui",
+    detail: missing.includes(target)
+      ? "not installed"
+      : `${missing.map(mauiWorkloadFor).join(", ")} not installed, and this project's restore needs it`,
+    fix: `dotnet workload install ${missing.map(mauiWorkloadFor).join(" ")}`,
   };
 };
 
@@ -245,11 +260,11 @@ const checkCSharpDevLoop = (
   if (!workloadList) {
     return { name, status: "unknown", detail: "requires the .NET SDK first" };
   }
-  if (target === "android") {
+  if (target === "android" || target === "ios") {
     return {
       name,
       status: "ok",
-      detail: "C# edits rebuild, reinstall, and relaunch the Android app",
+      detail: `C# edits rebuild, reinstall, and relaunch the ${target === "ios" ? "iOS" : "Android"} app`,
     };
   }
   if (process.platform !== "darwin") {
@@ -293,7 +308,7 @@ const checkXcode = (): Requirement => {
     return {
       name,
       status: "missing",
-      detail: "only Command Line Tools detected (Mac Catalyst needs full Xcode)",
+      detail: "only Command Line Tools detected (Mac Catalyst and iOS need full Xcode)",
       fix: "Install Xcode, then: sudo xcode-select -s /Applications/Xcode.app",
     };
   }
@@ -443,7 +458,130 @@ export const checkVelopack = (required: boolean): Requirement => {
   };
 };
 
-type DoctorTarget = "macos" | "windows" | "android";
+type DoctorTarget = MauiTarget;
+
+/** `xcrun simctl list runtimes --json`: the iOS runtimes that can boot. */
+export const availableIosRuntimes = (json: string): string[] =>
+  ((JSON.parse(json) as {
+    runtimes?: { identifier?: string; name?: string; isAvailable?: boolean }[];
+  }).runtimes ?? [])
+    .filter((runtime) =>
+      runtime.isAvailable !== false && /SimRuntime\.iOS-/.test(runtime.identifier ?? ""))
+    .map((runtime) => runtime.name ?? runtime.identifier!);
+
+/**
+ * Required for any iOS build, not only Simulator ones: Xcode 26's asset
+ * catalog compiler refuses to run without a Simulator runtime installed, so
+ * an App Store build of an app with an icon fails without one too.
+ */
+const checkIosSimulatorRuntime = (): Requirement => {
+  const name = "iOS Simulator runtime";
+  const result = run("xcrun", ["simctl", "list", "runtimes", "--json"]);
+  if (!result.ok) {
+    return { name, status: "unknown", detail: "could not run xcrun simctl — check Xcode first" };
+  }
+  let runtimes: string[];
+  try {
+    runtimes = availableIosRuntimes(result.stdout);
+  } catch {
+    return { name, status: "unknown", detail: "could not read xcrun simctl's runtime list" };
+  }
+  return runtimes.length > 0
+    ? { name, status: "ok", detail: runtimes.join(", ") }
+    : {
+        name,
+        status: "missing",
+        detail: "none installed — Xcode's asset compiler needs one for every iOS build, device builds included",
+        fix: "xcodebuild -downloadPlatform iOS",
+      };
+};
+
+const checkIosDevices = (): Requirement => {
+  const name = "iOS devices";
+  let devices: IosDevice[];
+  try {
+    devices = listDevices();
+  } catch {
+    return { name, status: "unknown", detail: "could not run xcrun devicectl (needs Xcode 15+)" };
+  }
+  const available = devices.filter((device) => device.available);
+  return available.length > 0
+    ? { name, status: "ok", detail: available.map((device) => device.name).join(", ") }
+    : {
+        name,
+        status: "unknown",
+        detail: "none connected — `vidra dev --target ios` runs in the Simulator; --device needs one",
+        fix: "connect an iPhone or iPad, trust this Mac, and turn on Developer Mode",
+      };
+};
+
+const checkIosDevelopmentProfile = (): Requirement | null => {
+  const project = tryDetectProject(process.cwd());
+  const bundleId = project ? readApplicationId(project.csprojPath) : null;
+  if (!bundleId) return null;
+  const name = "iOS development profile";
+  const profile = findDevelopmentProfile(bundleId);
+  return profile
+    ? { name, status: "ok", detail: `"${profile.name}" covers ${bundleId}` }
+    : {
+        name,
+        status: "unknown",
+        detail: `none installed for ${bundleId}; needed only for \`vidra dev --target ios --device\``,
+        fix: "register the App ID and your devices at developer.apple.com, then Xcode › Settings › Accounts › Download Manual Profiles",
+      };
+};
+
+const checkIosDistribution = (): Requirement[] => {
+  let signing: Requirement;
+  try {
+    const config = resolveIosSigningConfig();
+    signing = !config
+      ? {
+          name: "iOS signing (App Store)",
+          status: "unknown",
+          detail: "not configured; required only for `vidra build --target ios`",
+          fix: "set VIDRA_IOS_CODESIGN_KEY and VIDRA_IOS_PROVISIONING_PROFILE",
+        }
+      : listCodeSigningIdentities().includes(config.codesignKey)
+        ? {
+            name: "iOS signing (App Store)",
+            status: "ok",
+            detail: `${config.codesignKey} · ${config.provisioningProfile}`,
+          }
+        : {
+            name: "iOS signing (App Store)",
+            status: "missing",
+            detail: `VIDRA_IOS_CODESIGN_KEY is not an identity in your keychain: ${config.codesignKey}`,
+            fix: "security find-identity -v -p codesigning lists the ones you have",
+          };
+  } catch (error) {
+    signing = {
+      name: "iOS signing (App Store)",
+      status: "missing",
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  let upload: Requirement;
+  try {
+    const key = resolveAppStoreConnectKey();
+    upload = key
+      ? { name: "App Store Connect key", status: "ok", detail: `key ${key.keyId}` }
+      : {
+          name: "App Store Connect key",
+          status: "unknown",
+          detail: "not configured; required only for `vidra build --target ios --upload`",
+          fix: "set VIDRA_ASC_KEY_ID, VIDRA_ASC_ISSUER_ID, and VIDRA_ASC_KEY_PATH",
+        };
+  } catch (error) {
+    upload = {
+      name: "App Store Connect key",
+      status: "missing",
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
+  return [signing, upload];
+};
 
 const checkAndroidSdk = (): Requirement => {
   const sdk = process.env.ANDROID_SDK_ROOT ?? process.env.ANDROID_HOME;
@@ -597,6 +735,13 @@ export const diagnoseUpdateConfiguration = (input: {
         detail: "whole-app feeds are unsupported on Android; Google Play owns app updates",
         fix: "configure updates.feed.web only for Android builds",
       });
+    } else if (input.target === "ios") {
+      found.push({
+        name: "iOS app updates",
+        status: "missing",
+        detail: "whole-app feeds are unsupported on iOS; the App Store owns app updates",
+        fix: "configure updates.feed.web only for iOS builds",
+      });
     } else {
     if (mauiProgram !== null && !mauiProgram.includes(".UseVidraNativeUpdates(")) {
       found.push({
@@ -703,7 +848,7 @@ const inspectUpdateConfiguration = (
   }
 
   return [
-    ...(target !== "android" && (nativeWanted || resolveVpk())
+    ...(target !== "android" && target !== "ios" && (nativeWanted || resolveVpk())
       ? [checkVelopack(nativeWanted)]
       : []),
     ...diagnoseUpdateConfiguration({
@@ -748,8 +893,17 @@ export const collectRequirements = (
     checkMauiWorkload(workloadList, platformTarget),
     checkCSharpDevLoop(workloadList, platformTarget),
   ];
-  if (opts.includeXcode ?? platformTarget === "macos") {
+  if (opts.includeXcode ?? (platformTarget === "macos" || platformTarget === "ios")) {
     reqs.push(checkXcode());
+  }
+  if (platformTarget === "ios") {
+    const profile = checkIosDevelopmentProfile();
+    reqs.push(
+      checkIosSimulatorRuntime(),
+      checkIosDevices(),
+      ...(profile ? [profile] : []),
+      ...checkIosDistribution(),
+    );
   }
   if (platformTarget === "macos") {
     reqs.push(checkMacSigningIdentity(), checkNotarization());
@@ -805,8 +959,8 @@ export const runDoctor = async (argv: string[] = []): Promise<number> => {
       : process.platform === "win32"
         ? "windows"
         : "android";
-  const target = ((args.target as string | undefined) ?? defaultTarget) as DoctorTarget;
-  if (!["macos", "windows", "android"].includes(target)) {
+  const target = (args.target as string | undefined) ?? defaultTarget;
+  if (!isMauiTarget(target)) {
     console.error(row({ glyph: "error", detail: dim(`unsupported target: ${target}`) }));
     return 1;
   }
@@ -893,7 +1047,7 @@ export const printXcodeHint = (): void => {
     row({
       glyph: "manual",
       label:
-        "Mac Catalyst needs the full Xcode app, not just the Command Line Tools.",
+        "Mac Catalyst and iOS need the full Xcode app, not just the Command Line Tools.",
     }),
   );
   console.error(`      ${dim("1.")} ${value("install Xcode from the App Store")}`);

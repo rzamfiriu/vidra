@@ -207,14 +207,14 @@ jobs:
           echo "doctor exit: $?"
 
       # `--plan` returns before the MAUI workload gate, so the preview renders
-      # for both desktop targets on a Linux runner with no workloads installed.
-      - name: Assert vidra build --plan renders for both targets
+      # for every target on a Linux runner with no workloads installed.
+      - name: Assert vidra build --plan renders for every target
         run: |
           cd "$RUNNER_TEMP"
           node "$GITHUB_WORKSPACE/src/cli/create-vidra-app/dist/index.js" \
             plan-smoke --app-id=com.vidra.plansmoke
           cd plan-smoke
-          for target in macos windows android; do
+          for target in macos windows android ios; do
             output=$(node "$GITHUB_WORKSPACE/src/cli/vidra-cli/dist/cli.js" build --target "$target" --plan)
             echo "$output"
             echo "$output" | grep -q "nothing has run" || {
@@ -1085,3 +1085,177 @@ jobs:
             ${{ runner.temp }}/vidra-smoke/dist/*.apk
             ${{ runner.temp }}/vidra-smoke/dist/*.aab
           if-no-files-found: error
+
+  # Everything about iOS a Mac can prove without an Apple account: `vidra dev`
+  # reaches the page and a C# edit reaches the app, a Release build launches on
+  # the Simulator with the bridge working, web bundle updates apply, are
+  # refused and are rolled back over a sequence of launches, and the device
+  # build compiles ahead of time. Signing an IPA and uploading it need a paid
+  # account, so `--plan` (in the Linux job) is all that covers them here.
+  ios-simulator:
+    name: iOS Simulator smoke
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: |
+            src/cli/package-lock.json
+            src/sdk/vidra-js/package-lock.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/Directory.Build.props', 'pack-local.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      # The same pinned set as the macOS smoke leg, for the same reason: a
+      # newer one wants an Xcode SDK this image does not have.
+      - name: Install MAUI workload
+        run: dotnet workload install maui --version 10.0.303.1
+
+      # The Simulator runtime is not optional even for the device build below:
+      # Xcode's asset catalog compiler will not run without one.
+      - name: Log Xcode and Simulator runtimes
+        run: |
+          xcodebuild -version
+          xcrun simctl list runtimes
+
+      - name: Build SDK, CLI, and local packages
+        run: |
+          npm ci --prefix src/sdk/vidra-js || npm install --prefix src/sdk/vidra-js
+          npm run build --prefix src/sdk/vidra-js
+          npm ci --prefix src/cli || npm install --prefix src/cli
+          npm run build --prefix src/cli --workspaces --if-present
+          ./pack-local.sh
+
+      - name: Scaffold iOS smoke app
+        working-directory: ${{ runner.temp }}
+        run: |
+          node "$GITHUB_WORKSPACE/src/cli/create-vidra-app/dist/index.js" \
+            vidra-smoke --app-id=com.vidra.smoke
+
+      - name: Boot an iPhone simulator
+        run: |
+          udid="$(xcrun simctl list devices available --json | node -e '
+            const runtimes = JSON.parse(require("fs").readFileSync(0, "utf8")).devices;
+            const phones = Object.entries(runtimes)
+              .filter(([runtime]) => /SimRuntime\.iOS-/.test(runtime))
+              .sort(([a], [b]) => b.localeCompare(a, undefined, { numeric: true }))
+              .flatMap(([, devices]) => devices)
+              .filter((device) => device.name.startsWith("iPhone"));
+            if (phones.length === 0) process.exit(1);
+            console.log(phones[0].udid);
+          ')" || { echo "::error::no iPhone simulator on this image"; exit 1; }
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          echo "SIM_UDID=$udid" >> "$GITHUB_ENV"
+          echo "VIDRA_IOS_SIMULATOR=$udid" >> "$GITHUB_ENV"
+
+      # Before the E2E page goes in: that one exits once it has its proof,
+      # which would end the dev session it is meant to be observed in.
+      - name: Smoke the dev loop (vidra dev --target ios)
+        timeout-minutes: 25
+        run: |
+          bash tests/ci/dev-loop-smoke.sh \
+            "${{ runner.temp }}/vidra-smoke" \
+            "$GITHUB_WORKSPACE/src/cli/vidra-cli/dist/cli.js" \
+            ios
+
+      - name: Install the E2E proof MainPage into the scaffolded app
+        working-directory: ${{ runner.temp }}/vidra-smoke
+        run: |
+          sed 's/__PROJECT_NAMESPACE__/VidraSmoke/' \
+            "$GITHUB_WORKSPACE/tests/smoke/e2e-main-page.cs.in" \
+            > src/VidraSmoke.Host/MainPage.cs
+
+      - name: Build for the Simulator (vidra build --target ios --simulator)
+        working-directory: ${{ runner.temp }}/vidra-smoke
+        run: |
+          node "$GITHUB_WORKSPACE/src/cli/vidra-cli/dist/cli.js" \
+            build --target ios --simulator --verbose
+          test -d dist/*-ios-simulator.app
+
+      # The Simulator runs the app over this Mac's filesystem, so the proof is
+      # an ordinary file in the app's data container. `perl -e alarm` because
+      # macOS has no `timeout`.
+      - name: Launch on the Simulator and prove the bridge works
+        timeout-minutes: 10
+        working-directory: ${{ runner.temp }}/vidra-smoke
+        run: |
+          xcrun simctl install "$SIM_UDID" dist/*-ios-simulator.app
+          data="$(xcrun simctl get_app_container "$SIM_UDID" com.vidra.smoke data)"
+          proof="$data/Documents/vidra-e2e-proof.txt"
+          mkdir -p "$(dirname "$proof")"
+          rm -f "$proof"
+          SIMCTL_CHILD_VIDRA_E2E_PROOF="$proof" perl -e 'alarm shift; exec @ARGV' 300 \
+            xcrun simctl launch --console-pty --terminate-running-process "$SIM_UDID" com.vidra.smoke \
+            || true
+          [ -f "$proof" ] || { echo "::error::the app produced no bridge proof"; exit 1; }
+          value="$(cat "$proof")"
+          echo "==> bridge round-trip proof: '$value'"
+          [ "$value" = "1" ] || { echo "::error::unexpected proof value (want 1, got '$value')"; exit 1; }
+
+      - name: Configure the scaffolded app for web bundle updates
+        working-directory: ${{ runner.temp }}/vidra-smoke
+        run: |
+          node -e "
+            const fs = require('fs');
+            const config = fs.readFileSync('vidra.config.ts', 'utf8');
+            fs.writeFileSync(
+              'vidra.config.ts',
+              config.replace(
+                /updates:\\s*\\{\\s*feed:\\s*\"\"\\s*,?\\s*\\}/,
+                'updates: { feed: { web: \"http://127.0.0.1:8099/\" } }',
+              ),
+            );
+          "
+          sed 's/__PROJECT_NAMESPACE__/VidraSmoke/' \
+            "$GITHUB_WORKSPACE/tests/smoke/ota-main-page.cs.in" \
+            > src/VidraSmoke.Host/MainPage.cs
+
+      - name: Rebuild for the Simulator with updates enabled
+        working-directory: ${{ runner.temp }}/vidra-smoke
+        run: |
+          node "$GITHUB_WORKSPACE/src/cli/vidra-cli/dist/cli.js" \
+            build --app --target ios --simulator
+          xcrun simctl install "$SIM_UDID" dist/*-ios-simulator.app
+
+      - name: Prove an update applies, is refused, or is rolled back
+        timeout-minutes: 25
+        working-directory: ${{ runner.temp }}/vidra-smoke
+        run: |
+          node "$GITHUB_WORKSPACE/tests/smoke/ota-e2e.mjs" \
+            --ios-bundle-id com.vidra.smoke --ios-simulator "$SIM_UDID" \
+            --project "$PWD" \
+            --cli "$GITHUB_WORKSPACE/src/cli/vidra-cli/dist/cli.js" \
+            --work "${{ runner.temp }}/ios-ota-work"
+
+      # What App Store Connect would build from, minus the signature: Release,
+      # ios-arm64, compiled ahead of time and trimmed. A trimming or AOT failure
+      # otherwise surfaces only after an upload.
+      - name: Compile the device build (ios-arm64, Release, unsigned)
+        working-directory: ${{ runner.temp }}/vidra-smoke
+        run: |
+          dotnet build src/VidraSmoke.Host/VidraSmoke.Host.csproj \
+            -c Release -f net10.0-ios -r ios-arm64 -p:EnableCodeSigning=false
+
+      - name: Upload iOS proofs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ios-simulator-proofs
+          path: ${{ runner.temp }}/ios-ota-work/*.json
+          if-no-files-found: ignore

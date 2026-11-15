@@ -35,6 +35,10 @@ describe("artifactKind", () => {
     expect(artifactKind(`/out/App-1.0-android.${extension}`)).toBe("android");
   });
 
+  it("routes an .ipa to the iOS checks", () => {
+    expect(artifactKind("/out/App-1.0-ios.ipa")).toBe("ios");
+  });
+
   it("treats a plain directory as a Windows publish folder", () => {
     expect(artifactKind("/out/publish")).toBe("windows");
   });

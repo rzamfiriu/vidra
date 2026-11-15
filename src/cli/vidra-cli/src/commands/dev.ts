@@ -20,6 +20,17 @@ import {
 } from "../config.js";
 import { ensureMauiWorkload } from "@vidra-dev/cli-shared/dotnet-toolchain";
 import {
+  bootSimulator,
+  listDevices,
+  listSimulators,
+  pickDevice,
+  pickSimulator,
+  type DevicePick,
+  type IosDevice,
+  type IosSimulator,
+} from "../ios-devices.js";
+import { iosSimulatorRuntimeIdentifier } from "../targets/ios.js";
+import {
   looksLikeMissingWorkload,
   looksLikeMissingXcode,
   looksLikeXcodeTooOld,
@@ -68,10 +79,31 @@ const TARGETS = {
     name: "android",
     framework: "net10.0-android",
   },
+  ios: {
+    name: "ios",
+    framework: "net10.0-ios",
+  },
 } as const;
 
 type DevTargetName = keyof typeof TARGETS;
 type DevTarget = (typeof TARGETS)[DevTargetName];
+
+/** Where an iOS session runs. The Simulator unless `--device` says otherwise. */
+export type IosDestination = "simulator" | "device";
+
+export const resolveIosDestination = (
+  targetName: string,
+  args: Record<string, unknown>,
+): IosDestination | { error: string } | null => {
+  const flag = args["device"] ? "device" : args["simulator"] ? "simulator" : null;
+  if (targetName !== "ios") {
+    return flag ? { error: `--${flag} only applies to --target ios` } : null;
+  }
+  if (args["device"] && args["simulator"]) {
+    return { error: "--device and --simulator are mutually exclusive" };
+  }
+  return flag ?? "simulator";
+};
 
 export const devCommand = (argv: string[]): Promise<void> =>
   startSession(argv, { vite: true, hotReloadDefault: true });
@@ -108,6 +140,12 @@ const startSession = async (
     process.exit(1);
   }
 
+  const iosDestination = resolveIosDestination(target.name, args);
+  if (iosDestination && typeof iosDestination === "object") {
+    console.error(row({ glyph: "error", detail: dim(iosDestination.error) }));
+    process.exit(1);
+  }
+
   ensureTargetMatchesHostOs(target.name);
 
   const project = detectProject(process.cwd());
@@ -135,6 +173,7 @@ const startSession = async (
   const session = new DevSession(project, target, viteUrl, verbose, {
     vite: opts.vite,
     hotReload,
+    iosDestination,
   });
   let reloadTimer: NodeJS.Timeout | undefined;
   const configWatcher = fs.watch(project.root, (_event, filename) => {
@@ -224,7 +263,7 @@ export type WatchStrategy = "delta" | "rebuild";
  * by observing its own delta channel die, never by predicting that it will.
  */
 export const watchStrategyFor = (targetName: DevTargetName): WatchStrategy =>
-  targetName === "android" ? "rebuild" : "delta";
+  targetName === "android" || targetName === "ios" ? "rebuild" : "delta";
 
 /**
  * `dotnet watch` gives up on a process with this line, after an update batch
@@ -242,6 +281,8 @@ export interface DotnetWatchArgsOptions {
   buildConfig: string;
   verbose: boolean;
   strategy: WatchStrategy;
+  /** iOS only: the Simulator and a device are different builds of one framework. */
+  runtimeIdentifier?: string;
 }
 
 /**
@@ -271,6 +312,7 @@ export const buildDotnetWatchArgs = (
   opts.framework,
   "-c",
   opts.buildConfig,
+  ...(opts.runtimeIdentifier ? ["-r", opts.runtimeIdentifier] : []),
   ...(opts.strategy === "delta" && opts.framework.includes("maccatalyst")
     ? ["--property:RunWithOpen=false"]
     : []),
@@ -439,6 +481,7 @@ export const watchReaction = (
 interface SessionOptions {
   vite: boolean;
   hotReload: boolean;
+  iosDestination: IosDestination | null;
 }
 
 class DevSession {
@@ -470,6 +513,9 @@ class DevSession {
   private watchRestartPending = false;
   private fellBackToClassic = false;
   private androidSerial: string | undefined;
+  private readonly iosDestination: IosDestination | null;
+  private iosSimulator: IosSimulator | undefined;
+  private iosDevice: IosDevice | undefined;
 
   private endSession: () => void = () => {};
   private readonly sessionDone = new Promise<void>((resolve) => {
@@ -485,7 +531,14 @@ class DevSession {
   ) {
     this.vite = options.vite;
     this.hotReload = options.hotReload;
+    this.iosDestination = options.iosDestination;
     this.strategy = watchStrategyFor(target.name);
+  }
+
+  /** The Simulator and a device are separate builds, told apart by runtime identifier. */
+  private get iosRuntimeIdentifier(): string | undefined {
+    if (!this.iosDestination) return undefined;
+    return this.iosDestination === "device" ? "ios-arm64" : iosSimulatorRuntimeIdentifier();
   }
 
   /** How C# edits reach the app, in words the user can trust. */
@@ -602,7 +655,10 @@ class DevSession {
     // killChild already tears down the wrapping cmd.exe and its children.
     const vite = spawn(
       NPM_COMMAND,
-      buildViteArgs(this.viteUrl, this.target.name === "android"),
+      buildViteArgs(
+        this.viteUrl,
+        this.target.name === "android" || this.iosDestination === "device",
+      ),
       {
       cwd: this.project.uiDir,
       stdio: ["ignore", "pipe", "pipe"],
@@ -618,6 +674,7 @@ class DevSession {
     }
     if (this.target.name === "macos") return this.launchMacosHost();
     if (this.target.name === "windows") return this.launchWindowsHost();
+    if (this.target.name === "ios") return this.launchIosHost({ build: true });
     return this.launchAndroidHost();
   }
 
@@ -640,6 +697,7 @@ class DevSession {
         buildConfig: this.buildConfig,
         verbose: this.verbose,
         strategy: this.strategy,
+        runtimeIdentifier: this.iosRuntimeIdentifier,
       }),
       {
         cwd: this.project.root,
@@ -940,7 +998,9 @@ class DevSession {
             ? this.spawnMacosHost({ fatal: false }) ?? undefined
             : this.target.name === "windows"
               ? this.launchWindowsHost()
-              : this.launchAndroidHost();
+              : this.target.name === "ios"
+                ? this.launchIosHost({ build: false })
+                : this.launchAndroidHost();
         if (this.hostChild) this.watchReady = true;
       } while (this.relaunchPending && !this.shuttingDown);
     } finally {
@@ -1056,6 +1116,7 @@ class DevSession {
 
     if (this.target.name === "macos") this.launchMacosHost();
     else if (this.target.name === "windows") this.launchWindowsHost();
+    else if (this.target.name === "ios") this.launchIosHost({ build: true });
     else this.launchAndroidHost();
   }
 
@@ -1083,6 +1144,7 @@ class DevSession {
           this.buildConfig,
           "-f",
           this.target.framework,
+          ...(this.iosRuntimeIdentifier ? ["-r", this.iosRuntimeIdentifier] : []),
           this.project.csprojPath,
         ],
         {
@@ -1208,7 +1270,7 @@ class DevSession {
 
   private launchAndroidHost(): ChildProcess {
     const serial = this.androidSerial ??= resolveAndroidDevice();
-    const applicationId = readAndroidApplicationId(this.project.csprojPath);
+    const applicationId = requireApplicationId(this.project.csprojPath);
 
     console.log(
       taggedRow(
@@ -1268,7 +1330,7 @@ class DevSession {
       serial,
       port,
       reversed,
-      resolveAndroidFallbackHost(
+      resolveDeviceDevHost(
         this.viteUrl,
         process.env.VIDRA_ANDROID_HOST,
         localNetworkAddress(),
@@ -1340,6 +1402,127 @@ class DevSession {
       stdio: ["ignore", "pipe", "pipe"],
     });
     return this.registerChild(logcat, "host", applicationId);
+  }
+
+  /**
+   * Installs the built `.app` and launches it attached to its console, so the
+   * app's output (and the readiness sentinel) streams back here. simctl and
+   * devicectl both forward signals to the app, so terminating the child stops
+   * the app: relaunch and shutdown need nothing iOS-specific.
+   *
+   * `build: false` under the rebuild loop, where `dotnet watch build` has just
+   * built it for the same runtime identifier.
+   */
+  private launchIosHost(opts: { build: boolean }): ChildProcess {
+    if (opts.build) this.buildHostSync();
+
+    const outputDir = path.join(
+      this.project.hostDir,
+      "bin",
+      this.buildConfig,
+      this.target.framework,
+      this.iosRuntimeIdentifier!,
+    );
+    const app = findAppBundleRecursive(outputDir);
+    if (!app) {
+      console.error(row({ glyph: "error", detail: dim(`could not find .app bundle in ${outputDir}`) }));
+      process.exit(1);
+    }
+    const bundleId = requireApplicationId(this.project.csprojPath);
+
+    return this.iosDestination === "device"
+      ? this.launchOnIosDevice(app, bundleId)
+      : this.launchInSimulator(app, bundleId);
+  }
+
+  private launchInSimulator(app: string, bundleId: string): ChildProcess {
+    const simulator = this.iosSimulator ??= resolveIosSimulator();
+    console.log(
+      taggedRow(
+        "active",
+        "host",
+        `${dim("installing on")} ${value(simulator.name)} ${dim(`(iOS ${simulator.runtimeVersion.join(".")})…`)}`,
+      ),
+    );
+    try {
+      bootSimulator(simulator);
+      execFileSync("xcrun", ["simctl", "install", simulator.udid, app], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (error) {
+      console.error(taggedRow("error", "host", dim("Simulator boot/install failed")));
+      console.error(dim(formatBuildError(error)));
+      process.exit(1);
+    }
+
+    const host = spawn(
+      "xcrun",
+      ["simctl", "launch", "--console-pty", "--terminate-running-process", simulator.udid, bundleId],
+      {
+        cwd: this.project.root,
+        stdio: ["ignore", "pipe", "pipe"],
+        env: { ...process.env, SIMCTL_CHILD_VIDRA_DEV_URL: this.viteUrl },
+      },
+    );
+    return this.registerChild(host, "host", bundleId);
+  }
+
+  private launchOnIosDevice(app: string, bundleId: string): ChildProcess {
+    const device = this.iosDevice ??= resolveIosDevice();
+
+    // localhost on the phone is the phone. Vite listens on every interface for
+    // a device session, so point the app at this Mac's LAN address.
+    const port = new URL(this.viteUrl).port;
+    const host = resolveDeviceDevHost(this.viteUrl, process.env.VIDRA_IOS_HOST, localNetworkAddress());
+    if (!host) {
+      console.error(
+        row({
+          glyph: "error",
+          detail: dim("no LAN address for the device to reach the dev server — join a network, or set VIDRA_IOS_HOST"),
+        }),
+      );
+      process.exit(1);
+    }
+    const deviceDevUrl = `http://${host}${port ? `:${port}` : ""}`;
+
+    console.log(
+      taggedRow(
+        "active",
+        "host",
+        `${dim("installing on")} ${value(device.name)} ${dim(`· dev server ${deviceDevUrl}…`)}`,
+      ),
+    );
+    try {
+      execFileSync("xcrun", ["devicectl", "device", "install", "app", "--device", device.identifier, app], {
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (error) {
+      console.error(taggedRow("error", "host", dim(`install on ${device.name} failed`)));
+      console.error(dim(formatBuildError(error)));
+      console.error(
+        footer(dim("a locked device, or Developer Mode off (Settings → Privacy & Security), are the usual causes")),
+      );
+      process.exit(1);
+    }
+
+    const launcher = spawn(
+      "xcrun",
+      [
+        "devicectl",
+        "device",
+        "process",
+        "launch",
+        "--device",
+        device.identifier,
+        "--terminate-existing",
+        "--console",
+        "--environment-variables",
+        JSON.stringify({ VIDRA_DEV_URL: deviceDevUrl }),
+        bundleId,
+      ],
+      { cwd: this.project.root, stdio: ["ignore", "pipe", "pipe"] },
+    );
+    return this.registerChild(launcher, "host", bundleId);
   }
 
   private registerChild(
@@ -1459,7 +1642,7 @@ class DevSession {
             "shell",
             "am",
             "force-stop",
-            readAndroidApplicationId(this.project.csprojPath),
+            requireApplicationId(this.project.csprojPath),
           ],
           { stdio: "ignore" },
         );
@@ -1504,7 +1687,7 @@ export const selectAndroidDevUrl = (
   );
 };
 
-export const resolveAndroidFallbackHost = (
+export const resolveDeviceDevHost = (
   devUrl: string,
   override?: string,
   detectedLanAddress?: string,
@@ -1575,7 +1758,7 @@ const resolveAndroidDevice = (): string => {
   process.exit(1);
 };
 
-export const readAndroidApplicationId = (csprojPath: string): string => {
+export const requireApplicationId = (csprojPath: string): string => {
   const project = fs.readFileSync(csprojPath, "utf8");
   const applicationId = project.match(/<ApplicationId>([^<]+)<\/ApplicationId>/)?.[1]?.trim();
   if (!applicationId) {
@@ -1584,10 +1767,53 @@ export const readAndroidApplicationId = (csprojPath: string): string => {
   return applicationId;
 };
 
+const resolveIosSimulator = (): IosSimulator => {
+  const requested = process.env.VIDRA_IOS_SIMULATOR;
+  let simulator: IosSimulator | null = null;
+  try {
+    simulator = pickSimulator(listSimulators(), requested);
+  } catch {
+    console.error(row({ glyph: "error", detail: dim("xcrun simctl failed — is Xcode installed and selected?") }));
+    process.exit(1);
+  }
+  if (simulator) return simulator;
+  console.error(
+    row({
+      glyph: "error",
+      detail: dim(
+        requested
+          ? `VIDRA_IOS_SIMULATOR matches no available simulator: ${requested}`
+          : "no iOS simulator is installed — xcodebuild -downloadPlatform iOS",
+      ),
+    }),
+  );
+  return process.exit(1);
+};
+
+const resolveIosDevice = (): IosDevice => {
+  let pick: DevicePick;
+  try {
+    pick = pickDevice(listDevices(), process.env.VIDRA_IOS_DEVICE);
+  } catch {
+    console.error(row({ glyph: "error", detail: dim("xcrun devicectl failed — it needs Xcode 15 or later") }));
+    process.exit(1);
+  }
+  if ("device" in pick) return pick.device;
+  console.error(row({ glyph: "error", detail: dim(pick.error) }));
+  return process.exit(1);
+};
+
 const ensureTargetMatchesHostOs = (targetName: DevTargetName): void => {
   if (targetName === "macos" && process.platform !== "darwin") {
     console.error(
       row({ glyph: "error", detail: dim("the macOS target can only run on macOS") }),
+    );
+    process.exit(1);
+  }
+
+  if (targetName === "ios" && process.platform !== "darwin") {
+    console.error(
+      row({ glyph: "error", detail: dim("the iOS target needs a Mac with Xcode") }),
     );
     process.exit(1);
   }

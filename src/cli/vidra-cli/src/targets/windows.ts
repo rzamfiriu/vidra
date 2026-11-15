@@ -15,6 +15,9 @@ import type { AppMeta, BuildTarget } from "./types.js";
 export const windowsTarget: BuildTarget = {
   name: "windows",
   framework: "net10.0-windows10.0.19041.0",
+  artifactExtensions: [".zip"],
+  packageLabel: "package ZIP",
+  supportsNativeUpdates: true,
   // `RuntimeIdentifierOverride` (rather than `-r`/`RuntimeIdentifier`) is the
   // MAUI-recommended way to set the Windows RID — it sidesteps WindowsAppSDK
   // issue #3337, which otherwise pulls in the wrong packaging assets.

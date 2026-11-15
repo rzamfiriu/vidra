@@ -7,6 +7,9 @@ import type { AppMeta, BuildTarget } from "./types.js";
 export const macosTarget: BuildTarget = {
   name: "macos",
   framework: "net10.0-maccatalyst",
+  artifactExtensions: [".dmg"],
+  packageLabel: "package DMG",
+  supportsNativeUpdates: true,
   extraPublishArgs: ["-p:CreatePackage=false"],
 
   findBundle(publishDir: string, _projectName: string): string | null {

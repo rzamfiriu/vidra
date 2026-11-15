@@ -6,7 +6,8 @@ import {
   dotnetWatchEnv,
   parseAdbDevices,
   parseAndroidPid,
-  resolveAndroidFallbackHost,
+  resolveDeviceDevHost,
+  resolveIosDestination,
   selectAndroidDevUrl,
   watchReaction,
   watchStrategyFor,
@@ -43,8 +44,25 @@ describe("watchStrategyFor", () => {
     },
   );
 
-  it("uses rebuild and redeploy for Android", () => {
-    expect(watchStrategyFor("android")).toBe("rebuild");
+  it.each(["android", "ios"] as const)("uses rebuild and redeploy for %s", (target) => {
+    expect(watchStrategyFor(target)).toBe("rebuild");
+  });
+});
+
+describe("resolveIosDestination", () => {
+  it("defaults iOS to the Simulator, and leaves other targets without one", () => {
+    expect(resolveIosDestination("ios", {})).toBe("simulator");
+    expect(resolveIosDestination("ios", { device: true })).toBe("device");
+    expect(resolveIosDestination("macos", {})).toBeNull();
+  });
+
+  it("rejects the flags off iOS, and together", () => {
+    expect(resolveIosDestination("android", { device: true })).toEqual({
+      error: "--device only applies to --target ios",
+    });
+    expect(resolveIosDestination("ios", { device: true, simulator: true })).toEqual({
+      error: "--device and --simulator are mutually exclusive",
+    });
   });
 });
 
@@ -78,21 +96,21 @@ describe("Android device compatibility", () => {
 
   it("prefers an Android host override, then an explicit dev URL host", () => {
     expect(
-      resolveAndroidFallbackHost(
+      resolveDeviceDevHost(
         "http://192.168.1.20:5173",
         "10.1.2.3",
         "172.17.0.1",
       ),
     ).toBe("10.1.2.3");
     expect(
-      resolveAndroidFallbackHost(
+      resolveDeviceDevHost(
         "http://192.168.1.20:5173",
         undefined,
         "172.17.0.1",
       ),
     ).toBe("192.168.1.20");
     expect(
-      resolveAndroidFallbackHost(
+      resolveDeviceDevHost(
         "http://localhost:5173",
         undefined,
         "172.17.0.1",
@@ -122,6 +140,17 @@ describe("buildDotnetWatchArgs", () => {
       "-c",
       "Debug",
     ]);
+  });
+
+  it("builds iOS for the runtime identifier of where it will run", () => {
+    expect(
+      buildDotnetWatchArgs({
+        ...base,
+        framework: "net10.0-ios",
+        runtimeIdentifier: "ios-arm64",
+      }).slice(-4),
+    ).toEqual(["-c", "Debug", "-r", "ios-arm64"]);
+    expect(buildDotnetWatchArgs(base)).not.toContain("-r");
   });
 
   it("spawns the Catalyst app as a child instead of handing it to open(1)", () => {

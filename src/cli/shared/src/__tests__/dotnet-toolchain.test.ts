@@ -5,6 +5,7 @@ import {
   newestNet10Sdk,
   outputMentionsMaui,
   outputMentionsMauiTarget,
+  projectMauiTargets,
 } from "../dotnet-toolchain.js";
 
 describe("hasNet10Sdk", () => {
@@ -46,6 +47,30 @@ describe("outputMentionsMauiTarget", () => {
       outputMentionsMauiTarget("maui-maccatalyst  10.0.0  SDK\n", "android"),
     ).toBe(false);
   });
+
+  it("accepts the iOS component workload, and not Mac Catalyst's in its place", () => {
+    expect(outputMentionsMauiTarget("maui-ios  10.0.0  SDK\n", "ios")).toBe(true);
+    expect(outputMentionsMauiTarget("maui-maccatalyst  10.0.0  SDK\n", "ios")).toBe(false);
+  });
+});
+
+describe("projectMauiTargets", () => {
+  const csproj = `
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('osx'))">net10.0-maccatalyst;net10.0-ios;net10.0-android</TargetFrameworks>
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('windows'))">net10.0-windows10.0.19041.0;net10.0-android</TargetFrameworks>
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('linux'))">net10.0-android</TargetFrameworks>`;
+
+  it("reads the frameworks this OS restores, which is every one it declares", () => {
+    expect(projectMauiTargets(csproj, "darwin")).toEqual(["macos", "ios", "android"]);
+    expect(projectMauiTargets(csproj, "win32")).toEqual(["windows", "android"]);
+    expect(projectMauiTargets(csproj, "linux")).toEqual(["android"]);
+  });
+
+  it("counts an unconditional line, and ignores plain net10.0", () => {
+    expect(
+      projectMauiTargets("<TargetFrameworks>net10.0;net10.0-ios</TargetFrameworks>", "darwin"),
+    ).toEqual(["ios"]);
+  });
 });
 
 describe("mauiWorkloadFor", () => {
@@ -53,6 +78,7 @@ describe("mauiWorkloadFor", () => {
     expect(mauiWorkloadFor("android")).toBe("maui-android");
     expect(mauiWorkloadFor("windows")).toBe("maui-windows");
     expect(mauiWorkloadFor("macos")).toBe("maui-maccatalyst");
+    expect(mauiWorkloadFor("ios")).toBe("maui-ios");
     expect(mauiWorkloadFor()).toBe("maui");
   });
 });

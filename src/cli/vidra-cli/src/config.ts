@@ -5,6 +5,7 @@ import { createJiti } from "jiti";
 // TypeScript 7's package root no longer exposes the compiler API. This runtime
 // dependency deliberately pins the stable TypeScript 5 AST surface used here.
 import ts from "typescript-compiler-api";
+import type { MauiTarget } from "@vidra-dev/cli-shared/dotnet-toolchain";
 import type { UpdateConfig } from "./update-config.js";
 
 export const VIDRA_CONFIG_FILE = "vidra.config.ts";
@@ -26,7 +27,7 @@ export type VidraCommand =
 export interface VidraConfigContext {
   command: VidraCommand;
   mode: "development" | "production";
-  target: "macos" | "windows" | "android" | null;
+  target: MauiTarget | null;
 }
 
 export interface BridgeMemberIdentity {

@@ -1,4 +1,4 @@
-// End-to-end proof for over-the-air bundle updates (macOS, Windows + Android).
+// End-to-end proof for over-the-air bundle updates (macOS, Windows, Android + the iOS Simulator).
 //
 // Serves a real feed over HTTP and launches the packaged app repeatedly, because
 // every interesting property of an update system is a property of a *sequence*
@@ -21,6 +21,8 @@
 //                    --work <scratch dir> [--port 8099]
 //   node ota-e2e.mjs --android-app-id <package> --project <scaffold root>
 //                    --cli <cli.js> --work <scratch dir> [--port 8099]
+//   node ota-e2e.mjs --ios-bundle-id <bundle id> [--ios-simulator <udid>]
+//                    --project <scaffold root> --cli <cli.js> --work <scratch dir>
 
 import { spawn, spawnSync } from "node:child_process";
 import crypto, { createHash } from "node:crypto";
@@ -29,7 +31,9 @@ import path from "node:path";
 
 const args = parseArgs(process.argv.slice(2));
 const androidAppId = args["android-app-id"] ?? null;
-const bin = androidAppId ? null : required("bin");
+const iosBundleId = args["ios-bundle-id"] ?? null;
+const iosSimulator = args["ios-simulator"] ?? "booted";
+const bin = androidAppId || iosBundleId ? null : required("bin");
 const project = required("project");
 const cli = required("cli");
 const work = required("work");
@@ -368,6 +372,7 @@ function serveFeed() {
 /** Runs the app once and returns the proof it wrote. */
 function launch(name, { timeout = 60 } = {}) {
   if (androidAppId) return launchAndroid(name, timeout);
+  if (iosBundleId) return launchIosSimulator(name, timeout);
 
   const proofPath = path.join(work, `${name}.json`);
   fs.rmSync(proofPath, { force: true });
@@ -392,6 +397,58 @@ function launch(name, { timeout = 60 } = {}) {
     if (line.includes("[vidra]") || line.includes("error")) console.log(`    ${line}`);
   }
 
+  if (!fs.existsSync(proofPath)) {
+    throw new Error(`launch ${name} wrote no proof (exit=${result.status}, signal=${result.signal})`);
+  }
+
+  const proof = JSON.parse(fs.readFileSync(proofPath, "utf8"));
+  proof.output = output;
+  console.log(
+    `    marker=${proof.marker} current=${proof.currentVersion} ` +
+      `pending=${proof.pendingVersion} counter=${proof.counter}`,
+  );
+  return proof;
+}
+
+/**
+ * The Simulator runs the app as a Mac process over the Mac's filesystem and
+ * loopback, so the feed at 127.0.0.1 is reachable as-is and the proof can be a
+ * plain file. It goes inside the app's own data container, the one place the
+ * app is certain to be allowed to write.
+ */
+function launchIosSimulator(name, timeout) {
+  const container = spawnSync(
+    "xcrun",
+    ["simctl", "get_app_container", iosSimulator, iosBundleId, "data"],
+    { encoding: "utf8" },
+  );
+  if (container.status !== 0) {
+    throw new Error(`${iosBundleId} is not installed on ${iosSimulator}: ${container.stderr.trim()}`);
+  }
+  const proofPath = path.join(container.stdout.trim(), "Documents", `vidra-ota-${name}.json`);
+  fs.mkdirSync(path.dirname(proofPath), { recursive: true });
+  fs.rmSync(proofPath, { force: true });
+
+  console.log(`\n=================== launch: ${name} ===================`);
+  const result = spawnSync(
+    "xcrun",
+    ["simctl", "launch", "--console-pty", "--terminate-running-process", iosSimulator, iosBundleId],
+    {
+      env: {
+        ...process.env,
+        SIMCTL_CHILD_VIDRA_OTA_PROOF: proofPath,
+        SIMCTL_CHILD_VIDRA_OTA_TIMEOUT: String(timeout),
+        SIMCTL_CHILD_VIDRA_UPDATE_STARTUP_DELAY: "1",
+      },
+      timeout: (timeout + 45) * 1000,
+      encoding: "utf8",
+    },
+  );
+
+  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+  for (const line of output.split(/\r?\n/)) {
+    if (line.includes("[vidra]") || line.includes("error")) console.log(`    ${line}`);
+  }
   if (!fs.existsSync(proofPath)) {
     throw new Error(`launch ${name} wrote no proof (exit=${result.status}, signal=${result.signal})`);
   }

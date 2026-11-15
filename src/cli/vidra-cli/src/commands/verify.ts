@@ -25,6 +25,8 @@ import {
   value,
 } from "@vidra-dev/cli-shared/theme";
 import { verifyAndroidPackage } from "../targets/android.js";
+import { verifyIosPackage } from "../targets/ios.js";
+import type { MauiTarget } from "@vidra-dev/cli-shared/dotnet-toolchain";
 
 /**
  * `vidra verify [artifact]` — inspect a built artifact and report whether it is
@@ -70,7 +72,9 @@ export const verifyCommand = async (argv: string[]): Promise<void> => {
       ? verifyMacArtifact(artifact)
       : kind === "android"
         ? verifyAndroidArtifact(artifact)
-        : verifyWindowsArtifact(artifact);
+        : kind === "ios"
+          ? verifyIosArtifact(artifact)
+          : verifyWindowsArtifact(artifact);
 
   console.log();
   if (failures.length > 0) {
@@ -92,10 +96,20 @@ export const verifyCommand = async (argv: string[]): Promise<void> => {
  * looking for an `.exe` inside a macOS bundle. Only a directory that isn't a
  * `.app` — a Windows publish folder — falls through.
  */
-export const artifactKind = (artifact: string): "macos" | "windows" | "android" => {
+export const artifactKind = (artifact: string): MauiTarget => {
   if (artifact.endsWith(".dmg") || artifact.endsWith(".app")) return "macos";
   if (artifact.endsWith(".apk") || artifact.endsWith(".aab")) return "android";
+  if (artifact.endsWith(".ipa")) return "ios";
   return "windows";
+};
+
+const verifyIosArtifact = (artifact: string): string[] => {
+  const result = verifyIosPackage(artifact);
+  for (const finding of result.findings) {
+    report(finding.ok, finding.label, finding.detail);
+  }
+  if (!result.ok && result.output) console.error(dim(result.output.trim()));
+  return result.findings.filter((finding) => !finding.ok).map((finding) => finding.label);
 };
 
 const verifyAndroidArtifact = (artifact: string): string[] => {
@@ -253,7 +267,7 @@ const discoverArtifact = (): string | null => {
       ? [".zip"]
       : platform === "android"
         ? [".aab", ".apk"]
-        : [".dmg"];
+        : [".dmg", ".ipa"];
   const candidates = fs
     .readdirSync(dist)
     .filter((file) => wanted.some((extension) => file.endsWith(extension)))

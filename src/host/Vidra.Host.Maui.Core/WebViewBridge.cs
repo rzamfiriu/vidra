@@ -28,11 +28,12 @@ public sealed partial class WebViewBridge : IJsCallbackChannel, IUnsafeJsCallbac
     private readonly PendingJsCallRegistry _pendingJsCalls = new();
 
     /// <summary>
-    /// Completed once the first page has finished loading and been handed the
-    /// bridge handshake, which is the earliest point at which a call into JS
-    /// can find <c>window.__vidra_invoke</c> / <c>__vidra_onevent</c>.
+    /// Completed once the page has finished loading and been handed the bridge
+    /// handshake, which is the earliest point at which a call into JS can find
+    /// <c>window.__vidra_invoke</c> / <c>__vidra_onevent</c>. Replaced with a
+    /// fresh one when the page is lost (see <see cref="OnPageProcessTerminated"/>).
     /// </summary>
-    private readonly TaskCompletionSource _pageLoaded =
+    private TaskCompletionSource _pageLoaded =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private WebView? _webView;
@@ -200,7 +201,7 @@ public sealed partial class WebViewBridge : IJsCallbackChannel, IUnsafeJsCallbac
 
         // Released whether or not the handshake pushed: a call made now fails
         // with the page's own answer, which says more than "not loaded yet".
-        _pageLoaded.TrySetResult();
+        Volatile.Read(ref _pageLoaded).TrySetResult();
 
         if (BundleBooted is not null)
             _ = WatchBundleBootAsync();
@@ -357,17 +358,40 @@ public sealed partial class WebViewBridge : IJsCallbackChannel, IUnsafeJsCallbac
     /// </remarks>
     private async Task WaitForPageAsync(string contract, string member, CancellationToken ct)
     {
-        if (_pageLoaded.Task.IsCompleted)
+        var pageLoaded = Volatile.Read(ref _pageLoaded).Task;
+        if (pageLoaded.IsCompleted)
             return;
 
         try
         {
-            await _pageLoaded.Task.WaitAsync(_options.JsContractTimeout, ct);
+            await pageLoaded.WaitAsync(_options.JsContractTimeout, ct);
         }
         catch (TimeoutException)
         {
             throw new JsContractTimeoutException(contract, member, _options.JsContractTimeout);
         }
+    }
+
+    /// <summary>
+    /// The page's content process died, taking every in-flight call into JS with
+    /// it. Fails those calls now rather than at their timeout, and holds new
+    /// calls until the page that replaces it has loaded.
+    /// </summary>
+    internal void OnPageProcessTerminated()
+    {
+        var current = Volatile.Read(ref _pageLoaded);
+        if (current.Task.IsCompleted)
+        {
+            Interlocked.CompareExchange(
+                ref _pageLoaded,
+                new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+                current);
+        }
+
+        var failed = _pendingJsCalls.FailAll(
+            (contract, member) => new JsPageLostException(contract, member));
+        if (failed > 0)
+            _logger.LogWarning("Failed {Count} JavaScript call(s) whose page was lost.", failed);
     }
 
     public async Task CallJsAsync(JsMethodToken method, CancellationToken ct = default)

@@ -37,8 +37,18 @@ import {
   detectProject,
   type ProjectInfo,
 } from "../project.js";
-import type { BuildTarget } from "../targets/types.js";
+import { artifactFileName, type BuildTarget } from "../targets/types.js";
 import { macosTarget } from "../targets/macos.js";
+import {
+  iosPublishArgs,
+  iosSimulatorTarget,
+  iosTarget,
+  resolveAppStoreConnectKey,
+  resolveIosSigningConfig,
+  uploadToAppStoreConnect,
+  verifyIosPackage,
+  type AppStoreConnectKey,
+} from "../targets/ios.js";
 import {
   assessGatekeeper,
   hasDeveloperIdIdentity,
@@ -60,7 +70,6 @@ import {
   androidTarget,
   resolveAndroidSigningConfig,
   verifyAndroidPackage,
-  type AndroidSigningConfig,
 } from "../targets/android.js";
 import { ensureMauiWorkload } from "@vidra-dev/cli-shared/dotnet-toolchain";
 import {
@@ -85,19 +94,17 @@ const TARGETS: Record<string, BuildTarget> = {
   macos: macosTarget,
   windows: windowsTarget,
   android: androidTarget,
+  ios: iosTarget,
 };
 
-const packageLabel = (target: BuildTarget): string =>
-  target.name === "macos"
-    ? "package DMG"
-    : target.name === "windows"
-      ? "package ZIP"
-      : "package APK/AAB";
+/** Where a store target's release goes instead of a whole-app feed. */
+const STORE_INSTEAD_OF_APP_FEED: Partial<Record<BuildTarget["name"], string>> = {
+  android: "publish the AAB through Google Play",
+  ios: "publish the IPA through App Store Connect",
+};
 
 const artifactName = (project: ProjectInfo, target: BuildTarget): string =>
-  `${project.projectName}-${project.displayVersion}-${target.name}.${
-    target.name === "macos" ? "dmg" : target.name === "windows" ? "zip" : "aab"
-  }`;
+  artifactFileName(target, project);
 
 /**
  * What a build is asked to produce.
@@ -130,20 +137,106 @@ export const resolveChannel = (
 };
 
 /** Exits with a usage error rather than returning null, so callers get a target. */
-const resolveTarget = (flag: unknown): BuildTarget => {
+const resolveTarget = (args: Record<string, unknown>): BuildTarget => {
+  const flag = args["target"];
   const name = (typeof flag === "string" ? flag : "") || detectPlatform();
   const target = TARGETS[name];
-  if (target) return target;
+  const usageError = (message: string): never => {
+    console.error();
+    console.error(row({ glyph: "error", detail: dim(message) }));
+    console.error();
+    return process.exit(1);
+  };
 
-  console.error();
-  console.error(
+  if (!target) {
+    return usageError(
+      `unsupported target: ${name} \u2014 supported: ${Object.keys(TARGETS).join(", ")}`,
+    );
+  }
+  if ((args["simulator"] || args["upload"]) && target !== iosTarget) {
+    return usageError(`--${args["simulator"] ? "simulator" : "upload"} only applies to --target ios`);
+  }
+  if (args["simulator"] && args["upload"]) {
+    return usageError("--upload sends an App Store IPA; a --simulator build cannot be uploaded");
+  }
+  return args["simulator"] ? iosSimulatorTarget : target;
+};
+
+/**
+ * Publish arguments that sign a store build. A store will not take an unsigned
+ * one, so the build stops here rather than after the compile; `--plan` reports
+ * the gap instead.
+ */
+const resolveStoreSigningArgs = (target: BuildTarget, plan: boolean): string[] | undefined => {
+  if (target !== androidTarget && target !== iosTarget) return undefined;
+  try {
+    if (target === androidTarget) {
+      const signing = resolveAndroidSigningConfig();
+      if (signing) return androidPublishArgs(signing);
+      if (plan) return undefined;
+      throw new Error(
+        "Android release builds require a signing keystore — set VIDRA_ANDROID_KEYSTORE, VIDRA_ANDROID_KEY_ALIAS, VIDRA_ANDROID_KEY_PASSWORD, and VIDRA_ANDROID_STORE_PASSWORD",
+      );
+    }
+    const signing = resolveIosSigningConfig();
+    if (signing) return iosPublishArgs(signing);
+    if (plan) return undefined;
+    throw new Error(
+      "App Store builds need a distribution identity and profile — set VIDRA_IOS_CODESIGN_KEY and VIDRA_IOS_PROVISIONING_PROFILE, or build for the Simulator with --simulator",
+    );
+  } catch (error) {
+    console.error(
+      row({
+        glyph: "error",
+        label: `${target.name} signing`,
+        labelWidth: LABEL_WIDTH,
+        detail: dim(error instanceof Error ? error.message : String(error)),
+      }),
+    );
+    return process.exit(1);
+  }
+};
+
+const resolveUploadKey = (plan: boolean): AppStoreConnectKey | null => {
+  try {
+    const key = resolveAppStoreConnectKey();
+    if (key || plan) return key;
+    throw new Error(
+      "--upload needs an App Store Connect API key — set VIDRA_ASC_KEY_ID, VIDRA_ASC_ISSUER_ID, and VIDRA_ASC_KEY_PATH",
+    );
+  } catch (error) {
+    console.error(
+      row({
+        glyph: "error",
+        label: "upload",
+        labelWidth: LABEL_WIDTH,
+        detail: dim(error instanceof Error ? error.message : String(error)),
+      }),
+    );
+    return process.exit(1);
+  }
+};
+
+const stepUpload = (ipa: string, key: AppStoreConnectKey, verbose: boolean): void => {
+  const start = Date.now();
+  const uploaded = uploadToAppStoreConnect(ipa, key, verbose);
+  const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+  console.log(
     row({
-      glyph: "error",
-      detail: dim(`unsupported target: ${name} \u2014 supported: ${Object.keys(TARGETS).join(", ")}`),
+      glyph: uploaded.ok ? "done" : "error",
+      label: "upload",
+      labelWidth: LABEL_WIDTH,
+      detail: dim(
+        uploaded.ok
+          ? `App Store Connect accepted ${path.basename(ipa)} (${elapsed}s) — it appears in TestFlight once processed`
+          : "altool --upload-package failed",
+      ),
     }),
   );
-  console.error();
-  return process.exit(1);
+  if (!uploaded.ok) {
+    if (uploaded.output) console.error(dim(uploaded.output.trim()));
+    process.exit(1);
+  }
 };
 
 export const buildCommand = async (argv: string[]): Promise<void> => {
@@ -157,13 +250,13 @@ export const buildCommand = async (argv: string[]): Promise<void> => {
 
   // Before anything looks for a project: an unsupported target is a usage
   // error, and has to say so from any directory. `--web` needs no target at all.
-  const target = mode === "web" ? null : resolveTarget(args["target"]);
+  const target = mode === "web" ? null : resolveTarget(args);
 
   const project = detectProject(process.cwd());
   const loadedConfig = await loadVidraConfig(project.root, {
     command: "build",
     mode: "production",
-    target: target?.name as "macos" | "windows" | "android" | null,
+    target: target?.name ?? null,
   });
   const updateConfig = loadedConfig.updates;
   if (!plan) {
@@ -245,43 +338,36 @@ export const buildCommand = async (argv: string[]): Promise<void> => {
   console.log(
     header(
       "build",
-      `${appTarget.name} \u00b7 Release${channel ? ` \u00b7 ${channel}` : ""}${plan ? " \u00b7 plan" : ""}`,
+      `${appTarget.artifactSuffix ?? appTarget.name} \u00b7 Release${channel ? ` \u00b7 ${channel}` : ""}${plan ? " \u00b7 plan" : ""}`,
     ),
   );
   console.log(kv("project", project.projectName));
   console.log(kv("target", appTarget.framework));
   console.log();
 
-  let androidSigning: AndroidSigningConfig | null = null;
-  if (appTarget.name === "android") {
-    try {
-      androidSigning = resolveAndroidSigningConfig();
-      if (!androidSigning && !plan) {
-        throw new Error(
-          "Android release builds require a signing keystore — set VIDRA_ANDROID_KEYSTORE, VIDRA_ANDROID_KEY_ALIAS, VIDRA_ANDROID_KEY_PASSWORD, and VIDRA_ANDROID_STORE_PASSWORD",
-        );
-      }
-    } catch (error) {
-      console.error(
-        row({
-          glyph: "error",
-          label: "android signing",
-          labelWidth: LABEL_WIDTH,
-          detail: dim(error instanceof Error ? error.message : String(error)),
-        }),
-      );
-      process.exit(1);
-    }
+  if (appTarget.name === "ios" && process.platform !== "darwin" && !plan) {
+    console.error(
+      row({
+        glyph: "error",
+        label: "ios",
+        labelWidth: LABEL_WIDTH,
+        detail: dim("iOS builds need a Mac with Xcode"),
+      }),
+    );
+    process.exit(1);
   }
 
-  if (appTarget.name === "android" && feeds.app) {
+  const signingArgs = resolveStoreSigningArgs(appTarget, plan);
+  const ascKey = args["upload"] ? resolveUploadKey(plan) : null;
+
+  if (!appTarget.supportsNativeUpdates && feeds.app) {
     console.error(
       row({
         glyph: "error",
         label: "app updates",
         labelWidth: LABEL_WIDTH,
         detail: dim(
-          "whole-app feeds are not supported on Android — publish the AAB through Google Play and configure a web-only feed",
+          `whole-app feeds are not supported on ${appTarget.name} — ${STORE_INSTEAD_OF_APP_FEED[appTarget.name]} and configure a web-only feed`,
         ),
       }),
     );
@@ -289,7 +375,7 @@ export const buildCommand = async (argv: string[]): Promise<void> => {
   }
 
   const nativeSettings: NativeUpdateSettings | null =
-    appTarget.name !== "android" && feeds.app && layout.app
+    appTarget.supportsNativeUpdates && feeds.app && layout.app
       ? resolveNativeUpdateSettings({
           feed: feeds.app,
           releaseDir: layout.app,
@@ -329,7 +415,7 @@ export const buildCommand = async (argv: string[]): Promise<void> => {
   // \u2014 the dim footer says how to commit. `--execute` is the default; `--plan`
   // (alias `--dry-run`) opts into the preview.
   if (plan) {
-    printBuildPlan(project, appTarget, layout, feeds, nativeSettings, mode);
+    printBuildPlan(project, appTarget, layout, feeds, nativeSettings, mode, !!args["upload"]);
     console.log();
     console.log(
       footer(`${dim("nothing has run. re-run without")} ${lime("--plan")} ${dim("to apply.")}`),
@@ -341,7 +427,7 @@ export const buildCommand = async (argv: string[]): Promise<void> => {
   // Verify the MAUI workload before the (slow) UI build so we fail fast.
   if (!(await ensureMauiWorkload({
     csprojPath: project.csprojPath,
-    target: appTarget.name as "macos" | "windows" | "android",
+    target: appTarget.name,
   }))) {
     process.exit(1);
   }
@@ -349,12 +435,7 @@ export const buildCommand = async (argv: string[]): Promise<void> => {
   stepBuildUi(project, verbose);
   stepCopyAssets(project);
   stepStampUpdateConfig(project, updateConfig, feeds, layout);
-  const publishDir = stepDotnetPublish(
-    project,
-    appTarget,
-    verbose,
-    androidSigning ? androidPublishArgs(androidSigning) : undefined,
-  );
+  const publishDir = stepDotnetPublish(project, appTarget, verbose, signingArgs);
 
   const bundlePath = appTarget.findBundle(publishDir, project.projectName);
   if (!bundlePath) {
@@ -425,6 +506,25 @@ export const buildCommand = async (argv: string[]): Promise<void> => {
           released ? extractPackedApp(released.outputs.portableZip!) : bundlePath,
         );
   const outputPath = outputPaths[0];
+
+  if (appTarget === iosTarget) {
+    const verification = verifyIosPackage(outputPath);
+    for (const finding of verification.findings) {
+      console.log(
+        row({
+          glyph: finding.ok ? "done" : "error",
+          label: finding.label,
+          labelWidth: LABEL_WIDTH,
+          detail: dim(finding.detail),
+        }),
+      );
+    }
+    if (!verification.ok) {
+      if (verification.output) console.error(dim(verification.output.trim()));
+      process.exit(1);
+    }
+    if (ascKey) stepUpload(outputPath, ascKey, verbose);
+  }
 
   if (appTarget.name === "android") {
     for (const artifact of outputPaths) {
@@ -643,6 +743,7 @@ const printBuildPlan = (
   feeds: ResolvedFeeds,
   nativeSettings: NativeUpdateSettings | null,
   mode: BuildMode,
+  upload: boolean,
 ): void => {
   console.log(
     row({
@@ -675,7 +776,7 @@ const printBuildPlan = (
   console.log(
     row({
       glyph: "done",
-      label: "publish .NET",
+      label: `${target.dotnetVerb ?? "publish"} .NET`,
       labelWidth: LABEL_WIDTH,
       detail: `${dim("Release \u00b7")} ${value(target.framework)}`,
     }),
@@ -793,7 +894,7 @@ const printBuildPlan = (
         }),
       );
     }
-  } else {
+  } else if (target.name === "android") {
     const signing = resolveAndroidSigningConfig();
     console.log(
       row({
@@ -810,11 +911,63 @@ const printBuildPlan = (
     console.log(
       row({
         glyph: "active",
-        label: "package APK/AAB",
+        label: target.packageLabel,
         labelWidth: LABEL_WIDTH,
         detail: `${dim("signed release →")} ${value(artifactName(project, target))}`,
       }),
     );
+  } else if (target === iosSimulatorTarget) {
+    console.log(
+      row({
+        glyph: "active",
+        label: target.packageLabel,
+        labelWidth: LABEL_WIDTH,
+        detail: `${dim("unsigned, for the Simulator →")} ${value(artifactName(project, target))}`,
+      }),
+    );
+  } else {
+    const signing = resolveIosSigningConfig();
+    console.log(
+      row({
+        glyph: signing ? "done" : "error",
+        label: "ios signing",
+        labelWidth: LABEL_WIDTH,
+        detail: dim(
+          signing
+            ? `${signing.codesignKey} · ${signing.provisioningProfile}`
+            : "VIDRA_IOS_CODESIGN_KEY and VIDRA_IOS_PROVISIONING_PROFILE are required",
+        ),
+      }),
+    );
+    console.log(
+      row({
+        glyph: "active",
+        label: target.packageLabel,
+        labelWidth: LABEL_WIDTH,
+        detail: `${dim("App Store →")} ${value(artifactName(project, target))}`,
+      }),
+    );
+    console.log(
+      row({
+        glyph: "active",
+        label: "verify sig",
+        labelWidth: LABEL_WIDTH,
+        detail: dim("codesign, and an unexpired App Store profile"),
+      }),
+    );
+    if (upload) {
+      const key = resolveAppStoreConnectKey();
+      console.log(
+        row({
+          glyph: key ? "active" : "error",
+          label: "upload",
+          labelWidth: LABEL_WIDTH,
+          detail: key
+            ? dim(`altool → App Store Connect (key ${key.keyId})`)
+            : dim("VIDRA_ASC_KEY_ID, VIDRA_ASC_ISSUER_ID and VIDRA_ASC_KEY_PATH are required"),
+        }),
+      );
+    }
   }
 };
 
@@ -922,6 +1075,15 @@ const stepStampUpdateConfig = (
   }
 };
 
+/** Bytes in a file, or in everything under a directory: a Simulator `.app` is one. */
+const sizeOnDisk = (target: string): number => {
+  const stat = fs.statSync(target);
+  if (!stat.isDirectory()) return stat.size;
+  return fs
+    .readdirSync(target)
+    .reduce((total, entry) => total + sizeOnDisk(path.join(target, entry)), 0);
+};
+
 const countFiles = (dir: string): number => {
   let count = 0;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -947,11 +1109,12 @@ const stepDotnetPublish = (
   // The app's package.json owns the version; stamp it into the bundle so the
   // artifact, its metadata and any future updater all agree on one number.
   const version = resolveAppVersion(project.root, project.csprojPath);
+  const verb = target.dotnetVerb ?? "publish";
   try {
     execFileSync(
       "dotnet",
       [
-        "publish",
+        verb,
         project.csprojPath,
         "-c",
         "Release",
@@ -971,9 +1134,9 @@ const stepDotnetPublish = (
     console.error(
       row({
         glyph: "error",
-        label: "publish .NET",
+        label: `${verb} .NET`,
         labelWidth: LABEL_WIDTH,
-        detail: dim("dotnet publish failed"),
+        detail: dim(`dotnet ${verb} failed`),
       }),
     );
     console.error(dim(output));
@@ -989,7 +1152,7 @@ const stepDotnetPublish = (
   console.log(
     row({
       glyph: "done",
-      label: "publish .NET",
+      label: `${verb} .NET`,
       labelWidth: LABEL_WIDTH,
       detail: `${dim("Release \u00b7")} ${value(target.framework)} ${dim(`(${elapsed}s)`)}`,
     }),
@@ -1133,7 +1296,7 @@ const stepPublishVelopackWindowsArtifacts = (
   console.log(
     row({
       glyph: "done",
-      label: packageLabel(target),
+      label: target.packageLabel,
       labelWidth: LABEL_WIDTH,
       detail: `${value(path.basename(zipPath))} ${dim(
         `(${(fs.statSync(zipPath).size / (1024 * 1024)).toFixed(1)} MB, from vpk)`,
@@ -1181,7 +1344,7 @@ const stepPackage = async (
     console.error(
       row({
         glyph: "error",
-        label: packageLabel(target),
+        label: target.packageLabel,
         labelWidth: LABEL_WIDTH,
         detail: dim("packaging failed"),
       }),
@@ -1192,11 +1355,11 @@ const stepPackage = async (
 
   const pkgTime = ((Date.now() - start) / 1000).toFixed(1);
   for (const [index, outputPath] of outputPaths.entries()) {
-    const sizeMB = (fs.statSync(outputPath).size / (1024 * 1024)).toFixed(1);
+    const sizeMB = (sizeOnDisk(outputPath) / (1024 * 1024)).toFixed(1);
     console.log(
       row({
         glyph: "done",
-        label: index === 0 ? packageLabel(target) : "",
+        label: index === 0 ? target.packageLabel : "",
         labelWidth: LABEL_WIDTH,
         detail: `${value(path.basename(outputPath))} ${dim(`(${sizeMB} MB, ${pkgTime}s)`)}`,
       }),
