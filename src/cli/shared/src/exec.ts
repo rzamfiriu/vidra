@@ -16,9 +16,10 @@ export interface RunResult {
   stderr: string;
 }
 
-export const run = (cmd: string, args: string[]): RunResult => {
+export const run = (cmd: string, args: string[], cwd?: string): RunResult => {
   try {
     const stdout = execFileSync(cmd, args, {
+      cwd,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
     });

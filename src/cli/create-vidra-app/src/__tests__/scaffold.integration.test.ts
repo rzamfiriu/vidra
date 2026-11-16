@@ -53,6 +53,7 @@ describe("scaffold integration", () => {
   it("creates the expected top-level directory tree", async () => {
     const expected = [
       "package.json",
+      "global.json",
       "vidra.config.ts",
       "README.md",
       path.join("ui", "package.json"),

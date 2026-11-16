@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import { execFileSync } from "node:child_process";
 import prompts from "prompts";
 import { run } from "./exec.js";
@@ -188,18 +189,26 @@ export const missingWorkloadsFor = (
   return missing;
 };
 
+/**
+ * Where `dotnet` must run for this project. Workloads are per SDK, and the SDK
+ * is the one the project's `global.json` selects, which only applies from
+ * inside the project; the scaffolder runs from the directory above it.
+ */
+const projectDir = (csprojPath?: string): string | undefined =>
+  csprojPath ? path.dirname(csprojPath) : undefined;
+
+const listWorkloads = (csprojPath?: string): string =>
+  run(DOTNET, ["workload", "list"], projectDir(csprojPath)).stdout;
+
 const missingWorkloads = (target: MauiTarget, csprojPath?: string): string[] =>
   missingWorkloadsFor(
-    run(DOTNET, ["workload", "list"]).stdout,
+    listWorkloads(csprojPath),
     target,
     csprojPath ? readProjectMauiTargets(csprojPath) : [],
   );
 
-export const isMauiWorkloadInstalled = (target?: MauiTarget): boolean =>
-  outputMentionsMauiTarget(
-    run(DOTNET, ["workload", "list"]).stdout,
-    target,
-  );
+const anyMauiWorkloadInstalled = (csprojPath?: string): boolean =>
+  outputMentionsMaui(listWorkloads(csprojPath));
 
 // --- Workload gate -----------------------------------------------------------
 
@@ -235,7 +244,7 @@ const installWorkload = (
   console.log();
 
   try {
-    execFileSync(DOTNET, args, { stdio: "inherit" });
+    execFileSync(DOTNET, args, { cwd: projectDir(csprojPath), stdio: "inherit" });
     return true;
   } catch {
     console.error();
@@ -288,8 +297,8 @@ export const ensureMauiWorkload = async (opts: {
   const installed = (): boolean =>
     opts.target
       ? missingWorkloads(opts.target, opts.csprojPath).length === 0
-      : isMauiWorkloadInstalled();
-  if (opts.target ? missing.length === 0 : isMauiWorkloadInstalled()) return true;
+      : anyMauiWorkloadInstalled(opts.csprojPath);
+  if (opts.target ? missing.length === 0 : anyMauiWorkloadInstalled(opts.csprojPath)) return true;
 
   console.log();
   console.log(
