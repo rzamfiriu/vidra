@@ -47,10 +47,11 @@ public sealed class FilePickerModule : BridgeModuleBase
         FileResult result,
         CancellationToken ct)
     {
-#if ANDROID
+#if ANDROID || IOS
         // Android's picker commonly returns a content:// URI, which is not a
         // filesystem path and cannot safely be handed to the path-based bridge.
-        // Copy it into Vidra's app-scoped cache and return that real path.
+        // iOS returns a real path, but one outside every filesystem root the
+        // bridge grants. Copy it into Vidra's app-scoped cache and return that.
         var directory = Path.Combine(FileSystem.Current.CacheDirectory, "picked-files");
         Directory.CreateDirectory(directory);
         PrunePickedFiles(directory);
@@ -67,7 +68,7 @@ public sealed class FilePickerModule : BridgeModuleBase
 #endif
     }
 
-#if ANDROID
+#if ANDROID || IOS
     private static void PrunePickedFiles(string directory)
     {
         try

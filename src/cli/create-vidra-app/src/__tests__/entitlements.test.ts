@@ -65,4 +65,19 @@ describe("template Entitlements.plist", () => {
   it("leaves the app sandbox disabled", () => {
     expect(read()).toMatch(/com\.apple\.security\.app-sandbox<\/key>\s*<false\/>/);
   });
+
+  // These keys are Mac Catalyst hardened-runtime entitlements. iOS rejects them,
+  // and its SDK would sign with a root Entitlements.plist on its own.
+  it("applies to Mac Catalyst only", () => {
+    const csproj = fs.readFileSync(
+      path.resolve(here, "../../templates/react-vite/src/{{projectName}}.Host/{{projectName}}.Host.csproj"),
+      "utf8",
+    );
+    expect(csproj).toMatch(
+      /<CodesignEntitlements Condition="[^"]*== 'maccatalyst'">Entitlements\.plist<\/CodesignEntitlements>/,
+    );
+    expect(csproj).toMatch(
+      /<EnableDefaultCodesignEntitlements Condition="[^"]*== 'ios'">false<\/EnableDefaultCodesignEntitlements>/,
+    );
+  });
 });

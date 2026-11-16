@@ -1,7 +1,7 @@
 name: Release NuGet
 
 # Cross-platform NuGet release. Most Vidra packages target a platform-specific
-# TFM (net10.0-maccatalyst / net10.0-windows... / net10.0-android) that needs
+# TFM (net10.0-maccatalyst / net10.0-ios / net10.0-windows... / net10.0-android) that needs
 # its platform workload, so we pack on each build host and merge those builds
 # into a single multi-TFM package before pushing.
 #

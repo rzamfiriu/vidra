@@ -82,6 +82,19 @@ public sealed class EssentialsSupportFactoryTests
         support.Email.Should().BeFalse();
         support.FilePicker.Should().BeTrue();
     }
+
+    [Fact]
+    public void Create_On_iOS_Without_A_Mail_Account_Reports_Everything_But_Email()
+    {
+        // The simulator, and a device with no Mail account, cannot compose.
+        var support = EssentialsSupportFactory.Create("iOS", emailComposeSupported: false);
+
+        support.Platform.Should().Be("iOS");
+        support.Email.Should().BeFalse();
+        support.Share.Should().BeTrue();
+        support.FilePicker.Should().BeTrue();
+        support.SecureStorage.Should().BeTrue();
+    }
 }
 
 public sealed class ConnectivityDispatcherTests

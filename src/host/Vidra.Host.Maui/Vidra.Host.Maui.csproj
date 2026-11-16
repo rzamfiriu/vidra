@@ -8,13 +8,14 @@
          restore can read an assets file with no x64 target and fail with
          NETSDK1047. Naming the set here makes every restore write both. -->
     <RuntimeIdentifiers Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">maccatalyst-x64;maccatalyst-arm64</RuntimeIdentifiers>
-    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('osx'))">net10.0-maccatalyst;net10.0-android</TargetFrameworks>
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('osx'))">net10.0-maccatalyst;net10.0-ios;net10.0-android</TargetFrameworks>
     <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('windows'))">net10.0-windows10.0.19041.0;net10.0-android</TargetFrameworks>
     <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('linux'))">net10.0-android</TargetFrameworks>
     <ValidateXcodeVersion>false</ValidateXcodeVersion>
     <OutputType>Exe</OutputType>
     <RootNamespace>Vidra.Host.Maui</RootNamespace>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">21.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">17.0</SupportedOSPlatformVersion>
     <DefineConstants Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' And '$(VidraAndroidTestRuntime)' == 'true'">$(DefineConstants);VIDRA_ANDROID_TEST_RUNTIME</DefineConstants>
     <UseMaui>true</UseMaui>
     <SingleProject>true</SingleProject>
@@ -43,6 +44,17 @@
     -->
     <MtouchLink Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst' And '$(Configuration)' == 'Debug'">None</MtouchLink>
   </PropertyGroup>
+
+  <ItemGroup>
+    <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#16161A" />
+  </ItemGroup>
+
+  <!-- Same iOS wiring as the template; see its csproj for why. -->
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">
+    <PartialAppManifest Include="Platforms\iOS\Info.LocalNetwork.plist"
+                        Condition="'$(Configuration)' == 'Debug' Or '$(VidraAllowLocalNetworking)' == 'true'" />
+    <BundleResource Include="Platforms\iOS\PrivacyInfo.xcprivacy" LogicalName="PrivacyInfo.xcprivacy" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />

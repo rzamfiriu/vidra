@@ -75,7 +75,7 @@ export interface VidraConfig {
 export interface VidraConfigContext {
   readonly command: "build" | "bundle" | "dev" | "doctor" | "run" | "updates";
   readonly mode: "development" | "production";
-  readonly target: "macos" | "windows" | null;
+  readonly target: "macos" | "windows" | "android" | "ios" | null;
 }
 
 export type VidraConfigExport =

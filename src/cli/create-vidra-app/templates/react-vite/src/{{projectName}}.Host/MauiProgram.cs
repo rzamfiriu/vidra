@@ -29,13 +29,14 @@ public static class MauiProgram
         //
         // Whole app (desktop): native code included, via Velopack. Its other
         // half is the `VelopackApp` line in the desktop Program.cs files, which
-        // has to run before the UI framework starts. Google Play owns Android
-        // app updates; only the web-bundle tier runs there.
+        // has to run before the UI framework starts. Google Play and the App
+        // Store own app updates on Android and iOS; only the web-bundle tier
+        // runs there.
         builder
             .UseMauiApp<App>()
             .UseVidra()
             .UseVidraUpdates()
-#if !ANDROID
+#if !ANDROID && !IOS
             .UseVidraNativeUpdates()
 #endif
             .ConfigureFonts(fonts =>

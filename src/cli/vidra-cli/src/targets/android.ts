@@ -2,6 +2,11 @@ import path from "node:path";
 import fs from "fs-extra";
 import { spawnSync } from "node:child_process";
 import type { AppMeta, BuildTarget } from "./types.js";
+import {
+  assertBuildNumberIsNew,
+  recordBuildNumber,
+  type BuildNumberGuard,
+} from "./build-number.js";
 
 export interface AndroidSigningConfig {
   keyStore: string;
@@ -85,9 +90,17 @@ export const verifyAndroidPackage = (artifact: string): AndroidVerification => {
   };
 };
 
+const VERSION_CODE: BuildNumberGuard = {
+  label: "Android versionCode",
+  sidecar: "version-code",
+};
+
 export const androidTarget: BuildTarget = {
   name: "android",
   framework: "net10.0-android",
+  artifactExtensions: [".aab", ".apk"],
+  packageLabel: "package APK/AAB",
+  supportsNativeUpdates: false,
 
   findBundle(publishDir: string): string | null {
     const files = findAndroidPackages(publishDir);
@@ -118,26 +131,16 @@ export const androidTarget: BuildTarget = {
       outputDir,
       `${meta.projectName}-${meta.displayVersion}-android.aab`,
     );
-    const versionCodeFile = `${aabOut}.version-code`;
-    const previous = highestPackagedVersionCode(path.join(meta.projectRoot, "dist"));
-    if (previous !== null && meta.buildNumber < previous) {
-      throw new Error(
-        `Android versionCode ${meta.buildNumber} cannot be lower than the previously packaged ${previous}; set VIDRA_BUILD_NUMBER to a larger value`,
-      );
-    }
-    if (
-      previous !== null
-      && meta.buildNumber === previous
-      && !fs.existsSync(versionCodeFile)
-    ) {
-      throw new Error(
-        `Android versionCode ${meta.buildNumber} is already assigned to another local artifact; set VIDRA_BUILD_NUMBER to a larger value`,
-      );
-    }
+    assertBuildNumberIsNew(
+      VERSION_CODE,
+      path.join(meta.projectRoot, "dist"),
+      aabOut,
+      meta.buildNumber,
+    );
 
     fs.copySync(apk, apkOut, { overwrite: true });
     fs.copySync(aab, aabOut, { overwrite: true });
-    fs.writeFileSync(versionCodeFile, `${meta.buildNumber}\n`);
+    recordBuildNumber(VERSION_CODE, aabOut, meta.buildNumber);
     return [apkOut, aabOut];
   },
 };
@@ -161,24 +164,6 @@ const findAndroidPackages = (root: string): string[] => {
   };
   visit(root);
   return found;
-};
-
-const highestPackagedVersionCode = (outputDir: string): number | null => {
-  if (!fs.existsSync(outputDir)) return null;
-  const values: number[] = [];
-  const visit = (directory: string): void => {
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      const fullPath = path.join(directory, entry.name);
-      if (entry.isDirectory()) {
-        visit(fullPath);
-      } else if (entry.name.endsWith(".aab.version-code")) {
-        const value = Number(fs.readFileSync(fullPath, "utf8").trim());
-        if (Number.isSafeInteger(value)) values.push(value);
-      }
-    }
-  };
-  visit(outputDir);
-  return values.length > 0 ? Math.max(...values) : null;
 };
 
 const resolveApkSignerJar = (): string | null => {

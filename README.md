@@ -24,7 +24,7 @@ keep both sides in sync.
 - **Use the web framework you already know.** No XAML or Razor lock-in.
 - **Keep native code in .NET.** Reuse C# libraries, domain logic, and team skills.
 - **Share typed contracts.** C# declarations generate the APIs used on both sides.
-- **Ship a lightweight host.** Vidra uses the system WebView on Windows, macOS, and Android.
+- **Ship a lightweight host.** Vidra uses the system WebView on Windows, macOS, Android, and iOS.
 
 ## Quick start
 
@@ -53,15 +53,19 @@ Repository-specific contributor notes live in [`docs/`](docs/).
 
 ## Platform support
 
-Windows, macOS, and Android are supported. Windows targets must be built on
-Windows; macOS targets require Xcode and must be built on macOS. Android targets
-can be built on Windows, macOS, or Linux with JDK 17 and the Android SDK.
+Windows, macOS, Android, and iOS (17 and later) are supported. Windows targets
+must be built on Windows. macOS and iOS targets require Xcode and must be built
+on macOS; iOS also needs an iOS Simulator runtime (`xcodebuild -downloadPlatform
+iOS`), because Xcode's asset compiler refuses to run without one even for a
+device build. Android targets can be built on Windows, macOS, or Linux with JDK
+17 and the Android SDK.
 
-Vidra's MAUI projects include Android TFMs on macOS and Windows too. A
-target-specific `vidra build --target macos|windows` only needs that desktop
-workload, but a full `dotnet build`, `dotnet pack`, or `./pack-local.sh` builds
-every listed TFM and therefore also needs the Android workload, JDK 17, and the
-Android SDK.
+Vidra's MAUI projects list every TFM their OS can build: Mac Catalyst, iOS and
+Android on macOS, Windows and Android on Windows. Restore evaluates all of them,
+so building any one target needs the workload of every listed one; `vidra`
+checks this before it builds, and `dotnet workload restore` installs whatever is
+missing. A full `dotnet build`, `dotnet pack`, or `./pack-local.sh` also compiles
+the Android TFM, and therefore needs JDK 17 and the Android SDK.
 
 ## Contributing
 

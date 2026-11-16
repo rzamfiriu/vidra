@@ -2,7 +2,7 @@
 """Merge per-OS NuGet packages into single multi-TFM packages.
 
 A MAUI library targets a platform-specific TFM that can only be built on its
-native toolchain (``net10.0-maccatalyst`` on macOS,
+native toolchain (``net10.0-maccatalyst`` and ``net10.0-ios`` on macOS,
 ``net10.0-windows...`` on Windows, and ``net10.0-android`` on Linux).
 We therefore build/pack each package on each OS, producing per-OS ``.nupkg``
 files that each contain only one platform's ``lib/<tfm>/`` assets. This script

@@ -10,6 +10,11 @@ internal static class BridgeFileSystemRoots
 #if ANDROID
             "documents" => AppScopedDirectory("documents"),
             "downloads" => AppScopedDirectory("downloads"),
+#elif IOS
+            // MyDocuments is the app container's own Documents folder on iOS.
+            // There is no Downloads folder inside the sandbox.
+            "documents" => Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+            "downloads" => AppScopedDirectory("downloads"),
 #else
             "documents" => Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
             "downloads" => Path.Combine(
@@ -20,7 +25,7 @@ internal static class BridgeFileSystemRoots
                 $"Unknown filesystem root '{root}'."),
         };
 
-#if ANDROID
+#if ANDROID || IOS
     private static string AppScopedDirectory(string name)
     {
         var path = Path.Combine(

@@ -8,13 +8,14 @@
          restore can read an assets file with no x64 target and fail with
          NETSDK1047. Naming the set here makes every restore write both. -->
     <RuntimeIdentifiers Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">maccatalyst-x64;maccatalyst-arm64</RuntimeIdentifiers>
-    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('osx'))">net10.0-maccatalyst;net10.0-android</TargetFrameworks>
+    <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('osx'))">net10.0-maccatalyst;net10.0-ios;net10.0-android</TargetFrameworks>
     <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('windows'))">net10.0-windows10.0.19041.0;net10.0-android</TargetFrameworks>
     <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('linux'))">net10.0-android</TargetFrameworks>
     <ValidateXcodeVersion>false</ValidateXcodeVersion>
     <OutputType>Exe</OutputType>
     <RootNamespace>{{projectName}}</RootNamespace>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">21.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">17.0</SupportedOSPlatformVersion>
     <DefineConstants Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android' And '$(VidraAndroidTestRuntime)' == 'true'">$(DefineConstants);VIDRA_ANDROID_TEST_RUNTIME</DefineConstants>
     <UseMaui>true</UseMaui>
     <!--
@@ -57,6 +58,13 @@
                                                       sandbox
     -->
     <CodesignEntitlements Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">Entitlements.plist</CodesignEntitlements>
+    <!--
+      The iOS SDK signs with a root Entitlements.plist on its own whenever
+      CodesignEntitlements is empty. That file holds Mac Catalyst
+      hardened-runtime keys, which are meaningless on iOS and make App Store
+      validation reject the app, so iOS opts out and signs with none.
+    -->
+    <EnableDefaultCodesignEntitlements Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">false</EnableDefaultCodesignEntitlements>
 
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'maccatalyst'">17.0</SupportedOSPlatformVersion>
     <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</SupportedOSPlatformVersion>
@@ -101,6 +109,28 @@
 
   <ItemGroup>
     <MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
+    <!--
+      One icon for every platform: MAUI renders these SVGs into the iOS and Mac
+      Catalyst asset catalog, the Android mipmaps and the Windows .exe icon.
+      Color fills the background, and must stay opaque: App Store Connect
+      rejects an icon with transparency.
+    -->
+    <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#16161A" />
+  </ItemGroup>
+
+  <!--
+    iOS. Info.LocalNetwork.plist allows plain HTTP to the local network, which
+    since iOS 17 includes every IP address: it is how a device reaches the Vite
+    dev server. It is merged into Debug builds and into the unsigned simulator
+    builds `vidra build` makes (VidraAllowLocalNetworking), never into an App
+    Store build.
+    PrivacyInfo.xcprivacy declares the required-reason APIs .NET and MAUI use;
+    App Store Connect refuses an upload without it.
+  -->
+  <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'ios'">
+    <PartialAppManifest Include="Platforms\iOS\Info.LocalNetwork.plist"
+                        Condition="'$(Configuration)' == 'Debug' Or '$(VidraAllowLocalNetworking)' == 'true'" />
+    <BundleResource Include="Platforms\iOS\PrivacyInfo.xcprivacy" LogicalName="PrivacyInfo.xcprivacy" />
   </ItemGroup>
 
   <ItemGroup>
@@ -112,11 +142,12 @@
       inert until vidra.config.ts names a native feed: ~280 KB of managed code
       against a self-contained .NET + MAUI app, which is the price of never
       having to retrofit an entry point, a package reference and a builder call
-      into an app that has already shipped.
+      into an app that has already shipped. Desktop only: the stores own app
+      updates on Android and iOS.
     -->
     <PackageReference Include="Vidra.Updates.Native"
                       Version="{{vidraVersion}}"
-                      Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) != 'android'" />
+                      Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) != 'android' And $([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) != 'ios'" />
   </ItemGroup>
 
 </Project>

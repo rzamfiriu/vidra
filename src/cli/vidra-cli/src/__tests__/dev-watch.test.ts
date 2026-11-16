@@ -1,35 +1,12 @@
 import { describe, it, expect } from "vitest";
 import {
-  buildViteArgs,
   buildDotnetWatchArgs,
   classifyWatchLine,
   dotnetWatchEnv,
-  parseAdbDevices,
-  parseAndroidPid,
-  resolveAndroidFallbackHost,
-  selectAndroidDevUrl,
   watchReaction,
   watchStrategyFor,
   type WatchStrategy,
-} from "../commands/dev.js";
-
-describe("buildViteArgs", () => {
-  it("starts Vite on the port selected for the native host", () => {
-    expect(buildViteArgs("http://localhost:6000/")).toEqual([
-      "run",
-      "dev",
-      "--",
-      "--port",
-      "6000",
-      "--strictPort",
-    ]);
-  });
-
-  it("exposes Vite to the LAN only for Android fallback networking", () => {
-    expect(buildViteArgs("http://localhost:6000/", true)).toContain("0.0.0.0");
-    expect(buildViteArgs("http://localhost:6000/")).not.toContain("--host");
-  });
-});
+} from "../dev/dotnet-watch.js";
 
 describe("watchStrategyFor", () => {
   // Deltas do work on Mac Catalyst — in about half of sessions; the other half
@@ -43,61 +20,8 @@ describe("watchStrategyFor", () => {
     },
   );
 
-  it("uses rebuild and redeploy for Android", () => {
-    expect(watchStrategyFor("android")).toBe("rebuild");
-  });
-});
-
-describe("parseAdbDevices", () => {
-  it("returns only fully connected devices", () => {
-    expect(
-      parseAdbDevices(
-        "List of devices attached\nemulator-5554\tdevice\nphone\toffline\npending\tunauthorized\n",
-      ),
-    ).toEqual(["emulator-5554"]);
-  });
-});
-
-describe("Android device compatibility", () => {
-  it("uses adb reverse, emulator host routing, then LAN in that order", () => {
-    expect(selectAndroidDevUrl("phone", "5173", true, "192.168.1.5"))
-      .toBe("http://127.0.0.1:5173");
-    expect(selectAndroidDevUrl("emulator-5554", "5173", false, "192.168.1.5"))
-      .toBe("http://10.0.2.2:5173");
-    expect(selectAndroidDevUrl("phone", "5173", false, "192.168.1.5"))
-      .toBe("http://192.168.1.5:5173");
-  });
-
-  it("reads the app pid from legacy Android ps output", () => {
-    const output = [
-      "USER PID PPID VSIZE RSS WCHAN PC NAME",
-      "u0_a123 4321 200 100 20 ffffffff 0 com.example.app",
-    ].join("\n");
-    expect(parseAndroidPid(output, "com.example.app")).toBe("4321");
-  });
-
-  it("prefers an Android host override, then an explicit dev URL host", () => {
-    expect(
-      resolveAndroidFallbackHost(
-        "http://192.168.1.20:5173",
-        "10.1.2.3",
-        "172.17.0.1",
-      ),
-    ).toBe("10.1.2.3");
-    expect(
-      resolveAndroidFallbackHost(
-        "http://192.168.1.20:5173",
-        undefined,
-        "172.17.0.1",
-      ),
-    ).toBe("192.168.1.20");
-    expect(
-      resolveAndroidFallbackHost(
-        "http://localhost:5173",
-        undefined,
-        "172.17.0.1",
-      ),
-    ).toBe("172.17.0.1");
+  it.each(["android", "ios"] as const)("uses rebuild and redeploy for %s", (target) => {
+    expect(watchStrategyFor(target)).toBe("rebuild");
   });
 });
 
@@ -122,6 +46,17 @@ describe("buildDotnetWatchArgs", () => {
       "-c",
       "Debug",
     ]);
+  });
+
+  it("builds iOS for the runtime identifier of where it will run", () => {
+    expect(
+      buildDotnetWatchArgs({
+        ...base,
+        framework: "net10.0-ios",
+        runtimeIdentifier: "ios-arm64",
+      }).slice(-4),
+    ).toEqual(["-c", "Debug", "-r", "ios-arm64"]);
+    expect(buildDotnetWatchArgs(base)).not.toContain("-r");
   });
 
   it("spawns the Catalyst app as a child instead of handing it to open(1)", () => {

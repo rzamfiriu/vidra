@@ -7,10 +7,26 @@ import {
   macCatalystPackIsStale,
   newestPackVersion,
   diagnoseUpdateConfiguration,
+  availableIosRuntimes,
 } from "../doctor.js";
+
+describe("availableIosRuntimes", () => {
+  it("lists the iOS runtimes that can boot, and nothing else", () => {
+    const json = JSON.stringify({
+      runtimes: [
+        { identifier: "com.apple.CoreSimulator.SimRuntime.iOS-26-1", name: "iOS 26.1", isAvailable: true },
+        { identifier: "com.apple.CoreSimulator.SimRuntime.iOS-18-0", name: "iOS 18.0", isAvailable: false },
+        { identifier: "com.apple.CoreSimulator.SimRuntime.watchOS-26-0", name: "watchOS 26.0", isAvailable: true },
+      ],
+    });
+    expect(availableIosRuntimes(json)).toEqual(["iOS 26.1"]);
+    expect(availableIosRuntimes(JSON.stringify({ runtimes: [] }))).toEqual([]);
+  });
+});
 
 describe("looksLikeMissingWorkload", () => {
   it.each([
+    "error NETSDK1147: To build this project, the following workloads must be installed: maui-ios",
     "error NETSDK1147: To build this project, the following workloads must be installed: maui-maccatalyst",
     "The following workloads must be installed: maui-windows",
     "Workload(s) 'maui-maccatalyst' not found. Run `dotnet workload restore`.",
@@ -209,6 +225,19 @@ describe("diagnoseUpdateConfiguration", () => {
 
     expect(found.name).toBe("Android app updates");
     expect(found.detail).toContain("Google Play");
+  });
+
+  it("directs iOS whole-app updates to the App Store, without asking for Velopack", () => {
+    const found = diagnoseUpdateConfiguration({
+      ...clean,
+      target: "ios",
+      config: { feed: { app: "https://cdn/notes/" } },
+      mauiProgram: "builder.UseVidra();",
+      csproj: "<Project />",
+    });
+
+    expect(found.map((issue) => issue.name)).toEqual(["iOS app updates"]);
+    expect(found[0].detail).toContain("App Store");
   });
 
   /**

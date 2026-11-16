@@ -15,7 +15,7 @@ public class VidraPage : ContentPage
 
     public VidraPage()
     {
-#if ANDROID
+#if ANDROID || IOS
         SafeAreaEdges = SafeAreaEdges.All;
 #endif
 
@@ -29,6 +29,9 @@ public class VidraPage : ContentPage
 
         Bridge = IPlatformApplication.Current!.Services.GetRequiredService<WebViewBridge>();
         Bridge.Attach(AppWebView);
+#if IOS || MACCATALYST
+        AppWebView.ProcessTerminated += OnWebContentProcessTerminated;
+#endif
         var appWindowService = IPlatformApplication.Current.Services.GetService<IAppWindowService>();
         appWindowService?.AttachCallbackChannel(Bridge);
         Loaded += (_, _) => appWindowService?.TrackPage(this);
@@ -79,15 +82,51 @@ public class VidraPage : ContentPage
         {
             NavigateWhenHandlerReady(devServerUrl);
         }
+#if !IOS
+        // On iOS localhost is the device itself, and the CLI always supplies
+        // VIDRA_DEV_URL, so a debugger is no evidence of a dev server.
         else if (System.Diagnostics.Debugger.IsAttached)
         {
             NavigateWhenHandlerReady("http://localhost:5173");
         }
+#endif
         else
         {
             Bridge.LoadProductionAssets(AppWebView);
         }
     }
+
+#if IOS || MACCATALYST
+    private const int MaxReloadsPerWindow = 3;
+    private static readonly TimeSpan ReloadWindow = TimeSpan.FromMinutes(1);
+    private readonly Queue<DateTime> _recentTerminations = new();
+
+    /// <summary>
+    /// WebKit runs page content in a separate process, which iOS kills under
+    /// memory pressure. The WebView survives it but shows nothing, so load the
+    /// page again. A page that takes its own process down on load would
+    /// otherwise reload forever, hence the cap.
+    /// </summary>
+    private void OnWebContentProcessTerminated(object? sender, WebViewProcessTerminatedEventArgs e)
+    {
+        Bridge.OnPageProcessTerminated();
+
+        var now = DateTime.UtcNow;
+        while (_recentTerminations.Count > 0 && now - _recentTerminations.Peek() > ReloadWindow)
+            _recentTerminations.Dequeue();
+        _recentTerminations.Enqueue(now);
+
+        if (_recentTerminations.Count > MaxReloadsPerWindow)
+        {
+            Console.WriteLine(
+                $"[vidra] web content process terminated {_recentTerminations.Count} times in {ReloadWindow.TotalSeconds:0}s; not reloading again");
+            return;
+        }
+
+        Console.WriteLine("[vidra] web content process terminated; reloading the page");
+        LoadContent();
+    }
+#endif
 
     private void NavigateWhenHandlerReady(string url)
     {

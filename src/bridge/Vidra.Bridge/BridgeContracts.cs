@@ -59,6 +59,18 @@ public sealed class JsContractTimeoutException(string contract, string member, T
 }
 
 /// <summary>
+/// The page a JavaScript contract call was sent to went away before it
+/// answered, for example because the platform killed the WebView's content
+/// process. The call was not necessarily run.
+/// </summary>
+public sealed class JsPageLostException(string contract, string member)
+    : Exception($"The page was lost before JavaScript contract '{contract}.{member}' responded.")
+{
+    public string Contract { get; } = contract;
+    public string Member { get; } = member;
+}
+
+/// <summary>
 /// A native module rejected a request with a stable bridge-visible error code.
 /// </summary>
 public class BridgeInvocationException(string code, string message)

@@ -33,6 +33,26 @@ public sealed class PendingJsCallRegistryTests
     }
 
     [Fact]
+    public async Task FailAll_Fails_Every_Waiter_At_Once_And_Removes_Correlations()
+    {
+        var registry = new PendingJsCallRegistry();
+        var first = registry.Create("counter", "increment");
+        var second = registry.Create("counter", "reset");
+        var firstWait = registry.WaitAsync(first, TimeSpan.FromMinutes(1), CancellationToken.None);
+        var secondWait = registry.WaitAsync(second, TimeSpan.FromMinutes(1), CancellationToken.None);
+
+        registry.FailAll((contract, member) => new JsPageLostException(contract, member))
+            .Should().Be(2);
+
+        var firstError = await firstWait.Awaiting(t => t).Should().ThrowAsync<JsPageLostException>();
+        firstError.Which.Member.Should().Be("increment");
+        var secondError = await secondWait.Awaiting(t => t).Should().ThrowAsync<JsPageLostException>();
+        secondError.Which.Member.Should().Be("reset");
+        registry.Count.Should().Be(0);
+        registry.TryComplete(first.Id, "{}").Should().BeFalse("a late response from the old page is orphaned");
+    }
+
+    [Fact]
     public async Task WaitAsync_Cancellation_Removes_Correlation()
     {
         var registry = new PendingJsCallRegistry();

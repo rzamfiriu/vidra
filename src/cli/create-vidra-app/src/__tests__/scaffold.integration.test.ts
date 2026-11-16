@@ -53,6 +53,7 @@ describe("scaffold integration", () => {
   it("creates the expected top-level directory tree", async () => {
     const expected = [
       "package.json",
+      "global.json",
       "vidra.config.ts",
       "README.md",
       path.join("ui", "package.json"),
@@ -72,6 +73,13 @@ describe("scaffold integration", () => {
       path.join("src", `${projectName}.Host`, "Platforms", "Android", "MainApplication.cs"),
       path.join("src", `${projectName}.Host`, "Platforms", "Android", "AndroidManifest.xml"),
       path.join("src", `${projectName}.Host`, "Platforms", "Android", "Resources", "drawable", "vidra_notification.xml"),
+      path.join("src", `${projectName}.Host`, "Platforms", "iOS", "AppDelegate.cs"),
+      path.join("src", `${projectName}.Host`, "Platforms", "iOS", "Program.cs"),
+      path.join("src", `${projectName}.Host`, "Platforms", "iOS", "Info.plist"),
+      path.join("src", `${projectName}.Host`, "Platforms", "iOS", "Info.LocalNetwork.plist"),
+      path.join("src", `${projectName}.Host`, "Platforms", "iOS", "PrivacyInfo.xcprivacy"),
+      path.join("src", `${projectName}.Host`, "Resources", "AppIcon", "appicon.svg"),
+      path.join("src", `${projectName}.Host`, "Resources", "AppIcon", "appiconfg.svg"),
     ];
     for (const rel of expected) {
       const abs = path.join(root, rel);
@@ -156,13 +164,20 @@ describe("scaffold integration", () => {
       const csproj = await fs.readFile(host(`${projectName}.Host.csproj`), "utf8");
       expect(csproj).toContain('<PackageReference Include="Vidra.Updates.Native"');
       expect(csproj).toContain("GetTargetPlatformIdentifier('$(TargetFramework)')) != 'android'");
+      expect(csproj).toContain("GetTargetPlatformIdentifier('$(TargetFramework)')) != 'ios'");
     });
 
     it("calls both builder extensions", async () => {
       const live = stripComments(await fs.readFile(host("MauiProgram.cs"), "utf8"));
       expect(live).toContain(".UseVidraUpdates()");
       expect(live).toContain(".UseVidraNativeUpdates()");
-      expect(await fs.readFile(host("MauiProgram.cs"), "utf8")).toContain("#if !ANDROID");
+      expect(await fs.readFile(host("MauiProgram.cs"), "utf8")).toContain("#if !ANDROID && !IOS");
+    });
+
+    it("leaves Velopack out of the iOS entry point", async () => {
+      const live = stripComments(await fs.readFile(host("Platforms", "iOS", "Program.cs"), "utf8"));
+      expect(live).not.toContain("VelopackApp");
+      expect(live).toContain("UIApplication.Main(args, null, typeof(AppDelegate));");
     });
 
     it.each(["MacCatalyst", "Windows"])(
@@ -186,6 +201,76 @@ describe("scaffold integration", () => {
     it("keeps update settings out of package.json", async () => {
       const pkg = await fs.readJson(path.join(root, "package.json"));
       expect(pkg.vidra).toBeUndefined();
+    });
+  });
+
+  describe("the app icon", () => {
+    const host = (...rel: string[]): string =>
+      path.join(root, "src", `${projectName}.Host`, ...rel);
+
+    // App Store Connect rejects an icon with transparency; Color is what fills it.
+    it("is one MauiIcon with an opaque background", async () => {
+      const csproj = await fs.readFile(host(`${projectName}.Host.csproj`), "utf8");
+      expect(csproj).toMatch(
+        /<MauiIcon Include="Resources\\AppIcon\\appicon\.svg" ForegroundFile="Resources\\AppIcon\\appiconfg\.svg" Color="#[0-9A-Fa-f]{6}" \/>/,
+      );
+    });
+
+    it.each(["iOS", "MacCatalyst"])("is named in the %s Info.plist", async (platform) => {
+      const plist = await fs.readFile(host("Platforms", platform, "Info.plist"), "utf8");
+      expect(plist).toMatch(
+        /<key>XSAppIconAssets<\/key>\s*<string>Assets\.xcassets\/appicon\.appiconset<\/string>/,
+      );
+    });
+
+    it("is named in the Android manifest", async () => {
+      const manifest = await fs.readFile(host("Platforms", "Android", "AndroidManifest.xml"), "utf8");
+      expect(manifest).toContain('android:icon="@mipmap/appicon"');
+      expect(manifest).toContain('android:roundIcon="@mipmap/appicon_round"');
+    });
+  });
+
+  describe("iOS", () => {
+    const host = (...rel: string[]): string =>
+      path.join(root, "src", `${projectName}.Host`, ...rel);
+
+    it("targets iOS 17 on iPhone and iPad", async () => {
+      const csproj = await fs.readFile(host(`${projectName}.Host.csproj`), "utf8");
+      expect(csproj).toContain("net10.0-maccatalyst;net10.0-ios;net10.0-android");
+      expect(csproj).toMatch(/== 'ios'">17\.0<\/SupportedOSPlatformVersion>/);
+      const plist = await fs.readFile(host("Platforms", "iOS", "Info.plist"), "utf8");
+      expect(plist).toMatch(/<key>UIDeviceFamily<\/key>\s*<array>\s*<integer>1<\/integer>\s*<integer>2<\/integer>/);
+    });
+
+    // The Catalyst hardened-runtime entitlements are rejected on iOS, and the
+    // SDK picks up a root Entitlements.plist on its own unless told not to.
+    it("signs without the Mac Catalyst entitlements", async () => {
+      const csproj = await fs.readFile(host(`${projectName}.Host.csproj`), "utf8");
+      expect(csproj).toMatch(
+        /<EnableDefaultCodesignEntitlements Condition="[^"]*== 'ios'">false<\/EnableDefaultCodesignEntitlements>/,
+      );
+    });
+
+    // Plain HTTP to the local network is how a device reaches Vite; it must
+    // never ride along into an App Store build.
+    it("allows local networking only in Debug and simulator builds", async () => {
+      const csproj = await fs.readFile(host(`${projectName}.Host.csproj`), "utf8");
+      expect(csproj).toContain(
+        `Condition="'$(Configuration)' == 'Debug' Or '$(VidraAllowLocalNetworking)' == 'true'"`,
+      );
+      const release = await fs.readFile(host("Platforms", "iOS", "Info.plist"), "utf8");
+      expect(release).not.toContain("NSAppTransportSecurity");
+    });
+
+    it("bundles a privacy manifest declaring the APIs .NET and MAUI use", async () => {
+      const csproj = await fs.readFile(host(`${projectName}.Host.csproj`), "utf8");
+      expect(csproj).toContain(
+        '<BundleResource Include="Platforms\\iOS\\PrivacyInfo.xcprivacy" LogicalName="PrivacyInfo.xcprivacy" />',
+      );
+      const manifest = await fs.readFile(host("Platforms", "iOS", "PrivacyInfo.xcprivacy"), "utf8");
+      for (const reason of ["C617.1", "35F9.1", "E174.1", "CA92.1"]) {
+        expect(manifest).toContain(`<string>${reason}</string>`);
+      }
     });
   });
 

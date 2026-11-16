@@ -45,6 +45,7 @@ We follow a pyramid:
 | Smoke       | `vidra build` → signature, hardened runtime + entitlements  | `windows-latest`, `macos-latest` |
 | Smoke       | **Runtime E2E** — launch the packaged app, assert a C#↔JS round-trip | `windows-latest`, `macos-latest` |
 | Smoke       | Android signed APK/AAB + emulator bridge and OTA promotion/rollback | `ubuntu-latest` |
+| Smoke       | iOS Simulator: dev loop, Release bridge round-trip, OTA promotion/rollback, unsigned `ios-arm64` AOT compile | `macos-latest` |
 | Smoke       | **Dev loop** — `vidra dev` starts, Vite serves, the host builds under `dotnet watch` | `macos-latest` |
 | Guard rail  | CLI rejects `--target linux`; `--plan` renders; `doctor` runs | `ubuntu-latest`       |
 
@@ -65,11 +66,12 @@ credentials exist.
 ### Running locally
 
 `pack-local.sh` and an unqualified build of a multi-target MAUI project compile
-Android alongside the host's desktop TFM. Even on macOS or Windows, those
-commands require the Android workload, JDK 17, and Android SDK. Target-specific
-`vidra build --target macos|windows` remains desktop-only. Run
-`vidra doctor --target android` before a full local pack to check the additional
-toolchain.
+every TFM the OS lists: Mac Catalyst, iOS and Android on macOS, Windows and
+Android on Windows. Those commands need the Android workload, JDK 17, and the
+Android SDK, and on macOS the iOS workload and an iOS Simulator runtime. Even a
+target-specific build needs the platform workload (`android`, `ios`) of every
+other listed TFM, because restore evaluates all of them. Run `vidra doctor --target android` (and `--target ios`
+on macOS) before a full local pack to check the additional toolchain.
 
 ```bash
 # C# unit + contract + codegen
@@ -101,8 +103,14 @@ bash tests/ci/launch-macos-app.sh      dist/MyApp-0.1.0-macos.dmg   # macOS
 ./tests/ci/launch-windows-app.ps1 -Zip dist\MyApp-0.1.0-windows.zip `
   -Cli src\cli\vidra-cli\dist\cli.js                          # Windows
 
-# Dev loop: `vidra dev` + the C# reload-on-save loop (macOS)
+# Dev loop: `vidra dev` + the C# reload-on-save loop (macOS, or the iOS Simulator)
 bash tests/ci/dev-loop-smoke.sh <app-dir> <path/to/cli.js> macos
+bash tests/ci/dev-loop-smoke.sh <app-dir> <path/to/cli.js> ios
+
+# iOS OTA promotion/rollback, after `vidra build --app --target ios --simulator`
+# and `xcrun simctl install booted dist/*-ios-simulator.app`
+node tests/smoke/ota-e2e.mjs --ios-bundle-id <bundle id> \
+  --project <app-dir> --cli src/cli/vidra-cli/dist/cli.js --work /tmp/ios-ota
 ```
 
 Android release checks should additionally cover notification permission on API
@@ -293,7 +301,29 @@ the scaffolded host is an unpackaged Win32 app.
       and alongside Edge on Windows 10, but a machine without it renders a blank
       window. `vidra doctor` reports this.
 
-### 11. Regression safety net
+### 11. iOS
+
+CI covers the Simulator. These need a physical device, an Apple Developer
+Program membership, or a person looking at the screen.
+
+- [ ] `vidra dev --target ios --device` installs on an iPhone (iOS 17+), the
+      app reaches the Vite server over the LAN after the local network prompt
+      is allowed, and a C# edit relaunches it.
+- [ ] Content stays inside the safe area on a notched iPhone in portrait and
+      landscape, and on an iPad in split view.
+- [ ] Backgrounding under memory pressure (open several heavy apps, then
+      return) reloads the page rather than leaving it blank, and a pending
+      C# → JS call fails instead of hanging.
+- [ ] `filePicker.pickOne()` returns a path `filesystem.readText` can read, for
+      a file from iCloud Drive as well as On My iPhone.
+- [ ] `notifications.show()` prompts once and shows a banner.
+- [ ] The app icon appears on the home screen, in Settings, and in Spotlight.
+- [ ] `vidra build --target ios --upload` with real credentials reaches
+      TestFlight, the build passes processing, and installs from TestFlight.
+- [ ] A web bundle published after the TestFlight build applies on the next
+      launch of the installed app.
+
+### 12. Regression safety net
 
 - [ ] Full automated suite is green on `main` at the release commit.
 - [ ] Scaffolded template in step 1 runs cleanly against the published
